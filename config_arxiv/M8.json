@@ -2,7 +2,7 @@
     "output_dir": "./Results",
     "codename": "M",
     "expr_num": 8,
-    "comment": "8/6 We obtained an excellent model `M8`, which achieves 10K score by a 4-layer MLP.",
+    "comment": "Manual Run.",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
     "train_size": 480000,

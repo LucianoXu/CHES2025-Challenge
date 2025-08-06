@@ -7,7 +7,9 @@ import os
 def create_config_template() -> dict:
     return {
         "output_dir": "./Results",
+        "codename": "V",
         "expr_num": 0,
+        "comment": "Comment for the experiment",
         
         "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
         "train_size": 100_000,
@@ -43,10 +45,14 @@ class Config:
     
     def __str__(self):
         return str(self.config)
+    
+    @property
+    def name(self) -> str:
+        return f"{self.config['codename']}{self.config['expr_num']}"
 
     @property
     def output_folder(self) -> str:
-        return f"{self.config['output_dir']}/{self.config['expr_num']}/"
+        return f"{self.config['output_dir']}/{self.name}/"
     
     @property
     def model_path(self) -> str:

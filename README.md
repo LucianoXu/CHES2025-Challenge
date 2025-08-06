@@ -1,4 +1,34 @@
-# SCA
+# CHES2025 Challenge
+
+## Setup for Experiments
+
+- Prepare a `Python 3.11` environment and install the dependency by
+```
+pip install -r requirements.txt
+```
+
+- Download the data from https://drive.google.com/drive/folders/1JGbphwZXQvN_tEhpBIbQ-q-pN9wkqKQ- and put the `.h5` file at `./Dataset/CHES_2025/CHES_Challenge.h5`.
+
+- run `python main.py` to start one experiment. It will read the configurations in `expr_config.json` and execute the training and evaluation.
+
+- run `tensorboard --logdir=Results` to monitor the training and evaluation results through a browser.
+
+## Projecture Structure
+
+- `config_arxiv`: The arxiv of training configurations for execellent models we discovered.
+
+- `profiler`: The profiling tool. See `PROFILING_README.md`.
+
+- `src`: The source for training and evaluation.
+
+- `main.py`: The launcher for one experiment of training and evaluation according to the configurations in `expr_config.json`.
+
+- `expr_config.json`: Configuration file for `main.py`.
+
+- `run_profiling.py`: The launcher for profiling.
+
+- `Results`: The configurations, model parameters and evaluation results of all trainings are preserved here.
+
 
 ## Ideas
 
@@ -22,7 +52,11 @@
 
 - The division of training-validation-test splits are incorrect. Originally the validation split is from the traces of same key, and the model can be misled and optimize for this key only. I think the validation set should be from the training data.
 
+- Overfitting is a huge problem. Even if the validation loss keeps dropping after the first several epochs, the actual test performance will still decrease.
+
 ## Log
+- **8/6 We obtained an excellent model `M8`, which achieves 10K score by a 4-layer MLP.**
+- 8/6 Add early stop by validation loss.
 - 8/6 Added profiling script (AI Generated).
 - 8/6 Refactorized the project. Now we can specify all experimenting parameters using a json file.
 - 8/7 Now the validation set is split from the training data, not the attack data (to avoid bais on the same key).

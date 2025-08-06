@@ -44,6 +44,10 @@ def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SC
     # Initialize progress bar
     pbar = tqdm(total=num_epochs, desc="Training Progress", leave=True)
 
+    best_val_loss = float('inf')
+    best_model_state = None
+    early_stop: bool = False
+
     for epoch in range(num_epochs):
 
         desc = ""
@@ -94,12 +98,30 @@ def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SC
             # record loss and accuracy
             writer.add_scalar(f'{phase}/Loss', epoch_loss, epoch)
             writer.add_scalar(f'{phase}/Accuracy', epoch_acc, epoch)
+
+            # compare validation loss with history
+            if phase == 'val':
+                if epoch_loss < best_val_loss:
+                    best_val_loss = epoch_loss
+                    best_model_state = model.state_dict()
+                
+                elif epoch_loss > best_val_loss * 1.002:
+                    print(f"Validation loss increased by more than 5%: {epoch_loss:.4f} > {best_val_loss * 1.05:.4f}. Early stopping.")
+                    early_stop = True
     
         writer.flush()
         pbar.set_description(desc)
         pbar.update(1)
 
+        if early_stop:
+            print("Early stopping triggered.")
+            break
+
     pbar.close()
+
+    # Load the best model state
+    assert best_model_state is not None
+    model.load_state_dict(best_model_state)
 
     # evaluate GE and NTGE
 
