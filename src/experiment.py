@@ -4,11 +4,10 @@
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 import os
 import random
-from copy import deepcopy
 import numpy as np
 import torch
 
-from .dataloader import Custom_Dataset
+from .dataloader import load_data, SCA_Dataset
 from .trainer import trainer
 from .config import Config, create_config_template
 
@@ -34,19 +33,10 @@ def experiment(expr_config: Config):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = "cuda:0"
 
     # load data
-
-    dataset_train = Custom_Dataset(config=expr_config)
-
-    ##########################################################################
-
-    dataset_train.choose_phase("train")
-    dataset_val = deepcopy(dataset_train)
-    dataset_val.choose_phase("validation")
-    dataset_test = deepcopy(dataset_train)
-    dataset_test.choose_phase("test")
+    (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_test, Y_test, P_test, K_test)= load_data(expr_config, device)
 
     # save the configuration
     expr_config.save_config()
@@ -56,17 +46,19 @@ def experiment(expr_config: Config):
 
     dataloaders = {
         "train": torch.utils.data.DataLoader(
-            dataset_train, batch_size=batch_size,
+            SCA_Dataset(expr_config, X_train, Y_train, P_train, K_train),
+            batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers
         ),
         "val": torch.utils.data.DataLoader(
-            dataset_val, batch_size=batch_size,
+            SCA_Dataset(expr_config, X_val, Y_val, P_val, K_val),
+            batch_size=batch_size,
             shuffle=True, 
             num_workers=num_workers
         ),                          
     }
 
-    model = trainer(expr_config, dataloaders, dataset_test, device)
+    model = trainer(expr_config, dataloaders, SCA_Dataset(expr_config, X_test, Y_test, P_test, K_test), device)
 
     torch.save(model.state_dict(), expr_config.model_path)

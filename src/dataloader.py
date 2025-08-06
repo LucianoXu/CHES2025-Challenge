@@ -1,61 +1,95 @@
-import os
-from typing import Literal
+from typing import Callable, Literal
 import numpy as np
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from torch.utils.data import Dataset
-from sklearn.model_selection import train_test_split
 from src.utils import calculate_HW, load_ctf_2025
 import torch
 from .config import Config
 
-class Custom_Dataset(Dataset):
-    def __init__(self, config: Config):
+def standardize(X_train: np.ndarray, X_test: np.ndarray, device: str = 'cuda'):
+    """
+    GPU-accelerated standardization using PyTorch.
+    
+    Args:
+        X_train: Training data to fit the scaler on
+        X_test: Test data to transform
+        device: Device to use ('cuda' or 'cpu')
+    
+    Returns:
+        Tuple of (standardized_X_train, standardized_X_test) as numpy arrays
+    """
+    # Convert to PyTorch tensors and move to GPU
+    X_train_tensor = torch.from_numpy(X_train).float().to(device)
+    X_test_tensor = torch.from_numpy(X_test).float().to(device)
+    
+    # Calculate mean and std on training data
+    mean = X_train_tensor.mean(dim=0, keepdim=True)
+    std = X_train_tensor.std(dim=0, keepdim=True, unbiased=False)
+    
+    # Avoid division by zero
+    std = torch.where(std == 0, torch.ones_like(std), std)
+    
+    # Standardize both datasets
+    X_train_normalized = (X_train_tensor - mean) / std
+    X_test_normalized = (X_test_tensor - mean) / std
+    
+    # Convert back to numpy arrays on CPU
+    return X_train_normalized.cpu().numpy(), X_test_normalized.cpu().numpy()
 
+def load_data(config: Config, device: str = 'cuda'):
+
+    train_size = config["train_size"]
+    val_size = config["val_size"]
+    test_size = config["test_size"]
+
+    (X_profiling, X_attack), \
+    (Y_profiling, Y_attack), \
+    (P_profiling, P_attack), \
+    (K_profiling, K_attack) = load_ctf_2025(
+        config["dataset"],
+        byte=0, 
+        train_begin=0, train_end=train_size + val_size, 
+        test_begin=0, test_end=test_size)
+
+    # normalization
+    X_profiling, X_attack = standardize(X_profiling, X_attack, device)
+
+    # split train into train and validation
+    X_train = np.expand_dims(X_profiling[:train_size], 1)
+    Y_train = Y_profiling[:train_size]
+    P_train = P_profiling[:train_size]
+    K_train = K_profiling[:train_size]
+    
+    X_val = np.expand_dims(X_profiling[train_size:train_size + val_size], 1)
+    Y_val = Y_profiling[train_size:train_size + val_size]
+    P_val = P_profiling[train_size:train_size + val_size]
+    K_val = K_profiling[train_size:train_size + val_size]
+
+    X_test = np.expand_dims(X_attack, 1)
+    Y_test = Y_attack
+    P_test = P_attack
+    K_test = K_attack
+
+    return (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_test, Y_test, P_test, K_test)
+
+
+class SCA_Dataset(Dataset):
+    def __init__(self, config: Config, X: np.ndarray, Y: np.ndarray, P: np.ndarray, K: np.ndarray):
         self.config = config
+        self.X = X
+        self.Y = Y
+        self.P = P
+        self.K = K
 
-        train_size = config["train_size"]
-        val_size = config["val_size"]
-        test_size = config["test_size"]
+        self.leakage_fun : Callable[[np.ndarray], np.ndarray]
 
-        byte = 0
-        (self.X_profiling, self.X_attack), \
-        (self.Y_profiling, self.Y_attack), \
-        (self.P_profiling, self.P_attack), \
-        (self.K_profiling, self.K_attack) = load_ctf_2025(
-            config["dataset"],
-            byte=byte, 
-            train_begin=0, train_end=train_size + val_size, 
-            test_begin=0, test_end=test_size)
+        if self.config['leakage'] == 'HW':
+            self.leakage_fun = calculate_HW
 
-        # we know that we are using the same key
-        self.correct_key = self.K_attack[0]
+        elif self.config['leakage'] == 'ID':
+            self.leakage_fun = lambda x: x
 
-        self.scaler_std = StandardScaler()
-
-        self.X_profiling = self.scaler_std.fit_transform(self.X_profiling)
-        self.X_attack = self.scaler_std.transform(self.X_attack)
-
-        # split train into train and validation
-        self.X_train = self.X_profiling[:train_size]
-        self.Y_train = self.Y_profiling[:train_size]
-        
-        self.X_val = self.X_profiling[train_size:train_size + val_size]
-        self.Y_val = self.Y_profiling[train_size:train_size + val_size]
-
-        self.X_test = self.X_attack
-        self.Y_test = self.Y_attack
-
-
-    def choose_phase(self, phase: Literal['train', 'validation', 'test']):
-        if phase == 'train':
-            self.X, self.Y = np.expand_dims(self.X_train, 1), self.Y_train
-        elif phase == 'validation':
-            self.X, self.Y = np.expand_dims(self.X_val, 1), self.Y_val
-        elif phase == 'test':
-            self.X, self.Y = np.expand_dims(self.X_test, 1), self.Y_test
         else:
-            raise ValueError("Phase must be 'train', 'validation', or 'test'.")
-
+            raise ValueError("Unsupported leakage model.")
 
     def __len__(self):
         return len(self.X)
@@ -65,16 +99,7 @@ class Custom_Dataset(Dataset):
             idx = idx.tolist()
 
         trace = self.X[idx]
-        sensitive = self.Y[idx]
-
-        if self.config['leakage'] == 'HW':
-            sensitive = calculate_HW(sensitive)
-
-        elif self.config['leakage'] == 'ID':
-            pass
-
-        else:
-            raise ValueError("Unsupported leakage model. Use 'HW' or 'ID'.")
+        sensitive = self.leakage_fun(self.Y[idx])
 
         trace = torch.from_numpy(trace).float()
         sensitive = torch.from_numpy(np.array(sensitive)).long()

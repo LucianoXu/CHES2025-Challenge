@@ -5,11 +5,11 @@ from torch.utils.data import DataLoader
 from src.net import MLP, CNN
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from .dataloader import Custom_Dataset
+from .dataloader import SCA_Dataset
 from src.utils import evaluate_optimized
 from .config import Config
 
-def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: Custom_Dataset, device) -> nn.Module:
+def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SCA_Dataset, device) -> nn.Module:
 
     model_type = config["model"]
     num_steps = config["num_steps"]
@@ -100,15 +100,14 @@ def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: Cu
 
     # evaluate GE and NTGE
 
-    correct_key = dataset_test.K_attack[0]
-
+    correct_key = dataset_test.K[0]
 
     print("Evaluation GE/NTGE score ...")
     GE, NTGE = evaluate_optimized(
         device, 
         model, 
-        dataset_test.X_attack, 
-        dataset_test.P_attack, 
+        dataset_test.X, 
+        dataset_test.P, 
         correct_key, 
         leakage_model=config['leakage'], 
         nb_attacks=1, total_nb_traces_attacks=100_000, nb_traces_attacks=100_000,)

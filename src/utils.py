@@ -392,7 +392,7 @@ def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage
     :param nb_traces_attacks: number of traces to use in each attack
     :return: GE, NTGE
     """
-    attack_traces = torch.from_numpy(X_attack[:total_nb_traces_attacks]).to(device).unsqueeze(1).float()
+    attack_traces = torch.from_numpy(X_attack[:total_nb_traces_attacks]).to(device).float()
     predictions_wo_softmax = model(attack_traces)
     predictions = F.softmax(predictions_wo_softmax, dim=1)
     predictions = predictions.cpu().detach().numpy()
