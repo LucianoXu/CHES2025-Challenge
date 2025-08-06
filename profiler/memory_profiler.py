@@ -130,19 +130,10 @@ class MemoryProfiler:
         """Profile memory usage during training (simplified version)."""
         print("\n=== Profiling Training Phase ===")
         
-        # For memory profiling, we'll run a shorter version
-        short_config_template = {
-            **self.config.config,
-            "num_steps": 5,  # Reduce steps for memory profiling
-            "train_size": min(10000, self.config["train_size"]),  # Reduce data size
-            "val_size": min(2000, self.config["val_size"])
-        }
-        short_config = Config(short_config_template)
-        
         self.take_memory_snapshot("before_training")
         
         # Run short experiment
-        experiment(short_config)
+        experiment(self.config)
         
         self.take_memory_snapshot("after_training")
         

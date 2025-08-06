@@ -179,7 +179,7 @@ Modify the `config_template` in each profiler to test different configurations:
 ```python
 config_template = {
     "batch_size": 128,        # Reduce for memory profiling
-    "num_steps": 10,          # Reduce for quick testing
+    "num_epochs": 10,          # Reduce for quick testing
     "train_size": 50000,      # Reduce dataset size
     # ... other parameters
 }
@@ -414,7 +414,7 @@ In `flame_graph_profiler.py` you can adjust:
 ```python
 config_template = {
     "train_size": 50000,    # Reduce data size for quick analysis
-    "num_steps": 10,        # Reduce training steps
+    "num_epochs": 10,        # Reduce training steps
     "batch_size": 128,      # Adjust batch size
     # ... other parameters
 }

@@ -10,9 +10,12 @@ from src.utils import evaluate_optimized
 from .config import Config
 
 def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SCA_Dataset, device) -> nn.Module:
+    '''
+    The training will make use of all training data in the dataloader.
+    '''
 
     model_type = config["model"]
-    num_steps = config["num_steps"]
+    num_epochs = config["num_epochs"]
     dataset_sizes = {'train': config['train_size'], 'val': config['val_size']}
 
     # create the tensorboard writer and record the training setting
@@ -39,13 +42,13 @@ def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SC
     criterion = nn.CrossEntropyLoss()
 
     # Initialize progress bar
-    pbar = tqdm(total=num_steps, desc="Training Progress", leave=True)
+    pbar = tqdm(total=num_epochs, desc="Training Progress", leave=True)
 
-    for step in range(num_steps):
+    for epoch in range(num_epochs):
 
         desc = ""
 
-        # Each step has a training and validation phase
+        # Each epoch has a training and validation phase
         for phase in ['train', 'val']:  # ,
             if phase == 'train':
                 model.train()  # Set model to training mode
@@ -55,7 +58,7 @@ def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SC
             running_loss = 0.0
             running_corrects = 0
 
-            # Iterate over data.
+            # Iterate over all data (one epoch).
             tk0 = dataloaders[phase]  # tqdm(dataloader[phase])
             for (traces, labels) in tk0:
                 inputs = traces.to(device)
@@ -81,16 +84,16 @@ def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SC
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data).item()
 
-            step_loss = running_loss / dataset_sizes[phase]
-            step_acc = running_corrects / dataset_sizes[phase]
+            epoch_loss = running_loss / dataset_sizes[phase]
+            epoch_acc = running_corrects / dataset_sizes[phase]
             inputs.detach()
             labels.detach()
             
-            desc += '[{} Loss: {:.4f} Acc: {:.4f}]'.format(phase, step_loss, step_acc)
+            desc += '[{} Loss: {:.4f} Acc: {:.4f}]'.format(phase, epoch_loss, epoch_acc)
 
             # record loss and accuracy
-            writer.add_scalar(f'{phase}/Loss', step_loss, step)
-            writer.add_scalar(f'{phase}/Accuracy', step_acc, step)
+            writer.add_scalar(f'{phase}/Loss', epoch_loss, epoch)
+            writer.add_scalar(f'{phase}/Accuracy', epoch_acc, epoch)
     
         writer.flush()
         pbar.set_description(desc)

@@ -238,7 +238,7 @@ class ExperimentProfiler:
             'val_size': self.config['val_size'],
             'test_size': self.config['test_size'],
             'batch_size': self.config['batch_size'],
-            'num_steps': self.config['num_steps'],
+            'num_epochs': self.config['num_epochs'],
             'learning_rate': self.config['lr'],
             'model_args': self.config['model_args']
         }
