@@ -63,14 +63,17 @@ def calculate_HW(data: list[int]|np.ndarray) -> np.ndarray:
 
 
 def load_ctf_2025(
-        filename: str, 
-        leakage_model: Literal['HW', 'ID']='HW', 
+        filename: str,
         byte: int = 0, 
         train_begin: int = 0, train_end: int = 100000, test_begin: int = 0, test_end: int = 50000):
     '''
     filename: path to the h5 dataset
     leakage_model: the leakage model we consider. 'HW' for Hamming Weight, 'ID' for Intermediate Value.
     byte: the byte we consider, 0 for the first byte.
+
+    Returns:
+        (X_profiling, X_attack), (Y_profiling, Y_attack), (P_profiling, P_attack), (K_profiling, K_attack)
+        where X is the traces, Y is the labels (byte after AES_Sbox operation), P is the plaintexts, and K is the keys.
     '''
 
     in_file = h5py.File(filename, "r")
@@ -93,9 +96,6 @@ def load_ctf_2025(
         # labels are for byte 0
         Y_profiling = np.array(in_file['Profiling_traces/metadata'][:]['labels'])   # type: ignore # (num_example,) : (500_000,)
 
-    if leakage_model == 'HW':
-        Y_profiling = calculate_HW(Y_profiling)
-
     # Load attack traces
     X_attack = np.array(in_file['Attack_traces/traces'])    # (num_example, dim) : (100_000, 7_000)
     assert X_attack.ndim == 2, "Attack traces should be 2D array."
@@ -112,14 +112,11 @@ def load_ctf_2025(
     else:
         Y_attack = np.array(in_file['Attack_traces/metadata'][:]['labels'])  # type: ignore # (num_example,) : (100_000,)
 
-    if leakage_model == 'HW':
-        Y_attack = calculate_HW(Y_attack)
-
     print("Information about the dataset: ")
     print("X_profiling total shape", X_profiling.shape)
     print("Y_profiling total shape", Y_profiling.shape)
     print("P_profiling total shape", P_profiling.shape)
-    
+
     print("X_attack total shape", X_attack.shape)
     print("Y_attack total shape", Y_attack.shape)
     print("P_attack total shape", P_attack.shape)

@@ -24,5 +24,7 @@
 
 ## Log
 
+- 8/6 Refactorized the project. Now we can specify all experimenting parameters using a json file.
+- 8/7 Now the validation set is split from the training data, not the attack data (to avoid bais on the same key).
 - 8/5 Add plot output for GE scores in the evaluation script.
 - 8/5 Use `numba` just-in-time compilation optimization and evaluation speeds up for 10 times. Correctness verified.

@@ -4,29 +4,32 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
-from src.utils import load_ctf_2025
+from src.utils import calculate_HW, load_ctf_2025
 import torch
+from .config import Config
 
 class Custom_Dataset(Dataset):
-    def __init__(self, root = './', dataset = "CHES_2025", leakage: Literal['HW', 'ID'] = "HW", 
-                 train_size=45000, val_size=5000, test_size=10000,
-                 transform = None):
+    def __init__(self, config: Config):
 
-        if dataset == "CHES_2025":
-            byte = 0
-            data_root = 'Dataset/CHES_2025/CHES_Challenge.h5'
-            (self.X_profiling, self.X_attack), \
-            (self.Y_profiling, self.Y_attack), \
-            (self.P_profiling, self.P_attack), \
-            (self.K_profiling, self.K_attack) = load_ctf_2025(
-                root + data_root, leakage_model=leakage, 
-                byte=byte, train_begin=0, train_end=train_size+val_size, test_begin=0, test_end=test_size)
+        self.config = config
 
-            # we know that we are using the same key
-            self.correct_key = self.K_attack[0]
+        train_size = config["train_size"]
+        val_size = config["val_size"]
+        test_size = config["test_size"]
 
-        print("The dataset we using: ", data_root)
-        self.transform = transform
+        byte = 0
+        (self.X_profiling, self.X_attack), \
+        (self.Y_profiling, self.Y_attack), \
+        (self.P_profiling, self.P_attack), \
+        (self.K_profiling, self.K_attack) = load_ctf_2025(
+            config["dataset"],
+            byte=byte, 
+            train_begin=0, train_end=train_size + val_size, 
+            test_begin=0, test_end=test_size)
+
+        # we know that we are using the same key
+        self.correct_key = self.K_attack[0]
+
         self.scaler_std = StandardScaler()
 
         self.X_profiling = self.scaler_std.fit_transform(self.X_profiling)
@@ -36,23 +39,22 @@ class Custom_Dataset(Dataset):
         self.X_train = self.X_profiling[:train_size]
         self.Y_train = self.Y_profiling[:train_size]
         
-        self.X_attack_val = self.X_profiling[train_size:train_size + val_size]
-        self.Y_attack_val = self.Y_profiling[train_size:train_size + val_size]
+        self.X_val = self.X_profiling[train_size:train_size + val_size]
+        self.Y_val = self.Y_profiling[train_size:train_size + val_size]
 
-        self.X_attack_test = self.X_attack
-        self.Y_attack_test = self.Y_attack
+        self.X_test = self.X_attack
+        self.Y_test = self.Y_attack
 
 
-    def choose_phase(self, phase):
+    def choose_phase(self, phase: Literal['train', 'validation', 'test']):
         if phase == 'train':
             self.X, self.Y = np.expand_dims(self.X_train, 1), self.Y_train
         elif phase == 'validation':
-            self.X, self.Y = np.expand_dims(self.X_attack_val, 1), self.Y_attack_val
+            self.X, self.Y = np.expand_dims(self.X_val, 1), self.Y_val
         elif phase == 'test':
-            self.X, self.Y =np.expand_dims(self.X_attack_test, 1), self.Y_attack_test
+            self.X, self.Y = np.expand_dims(self.X_test, 1), self.Y_test
         else:
             raise ValueError("Phase must be 'train', 'validation', or 'test'.")
-
 
 
     def __len__(self):
@@ -64,19 +66,17 @@ class Custom_Dataset(Dataset):
 
         trace = self.X[idx]
         sensitive = self.Y[idx]
-        # plaintext = self.Plaintext[idx]
-        sample = {'trace': trace, 'sensitive': sensitive} #, 'plaintext': plaintext}
-        # print(sample)
-        if self.transform:
-            sample = self.transform(sample)
 
-        return sample
+        if self.config['leakage'] == 'HW':
+            sensitive = calculate_HW(sensitive)
 
-class ToTensor_trace(object):
-    """Convert ndarrays in sample to Tensors."""
+        elif self.config['leakage'] == 'ID':
+            pass
 
-    def __call__(self, sample):
-        # trace, label, plaintext= sample['trace'], sample['sensitive'], sample['plaintext']
-        trace, label= sample['trace'], sample['sensitive']#, sample['plaintext']
+        else:
+            raise ValueError("Unsupported leakage model. Use 'HW' or 'ID'.")
 
-        return torch.from_numpy(trace).float(), torch.from_numpy(np.array(label)).long()
+        trace = torch.from_numpy(trace).float()
+        sensitive = torch.from_numpy(np.array(sensitive)).long()
+
+        return trace, sensitive

@@ -5,19 +5,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class MLP(nn.Module):
-    def __init__(self, search_space,num_sample_pts, classes):
+    def __init__(self, search_space, num_sample_pts, classes):
         super(MLP, self).__init__()
         self.num_layers = search_space["layers"]
-        self.neurons = search_space["neurons"]
+        self.hidden_dim = search_space["hidden_dim"]
         self.activation = search_space["activation"]
 
         self.layers = nn.ModuleList()
 
         for layer_index in range(0, self.num_layers):
             if layer_index == 0:
-                self.layers.append(nn.Linear(num_sample_pts, self.neurons))
+                self.layers.append(nn.Linear(num_sample_pts, self.hidden_dim))
             else:
-                self.layers.append(nn.Linear(self.neurons, self.neurons))
+                self.layers.append(nn.Linear(self.hidden_dim, self.hidden_dim))
 
             if self.activation == 'relu':
                 self.layers.append(nn.ReLU())
@@ -27,7 +27,7 @@ class MLP(nn.Module):
                 self.layers.append(nn.Tanh())
             elif self.activation == 'elu':
                 self.layers.append(nn.ELU())
-        self.softmax_layer = nn.Linear(self.neurons, classes)
+        self.softmax_layer = nn.Linear(self.hidden_dim, classes)
 
     def number_of_parameters(self):
         return (sum(p.numel() for p in self.parameters() if p.requires_grad))
@@ -196,22 +196,6 @@ def create_cnn_hp(search_space):
         pooling_strides.append(pool_size)
         pooling_types.append(pooling_type)
     return kernels, strides, filters, pooling_type, pooling_sizes, pooling_strides, paddings
-
-
-
-
-def weight_init(m, type = 'kaiming_uniform_'):
-    if isinstance(m, nn.Conv1d) or isinstance(m, nn.Linear):
-        if type == 'xavier_uniform_':
-            nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('selu'))
-        elif type == 'he_uniform':
-            nn.init.kaiming_uniform_(m.weight)
-        elif type == 'random_uniform':
-            nn.init.uniform_(m.weight)
-        if m.bias != None:
-            nn.init.zeros_(m.bias)
-
-
 
 
 def create_hyperparameter_space(model_type):
