@@ -23,7 +23,7 @@
 - The division of training-validation-test splits are incorrect. Originally the validation split is from the traces of same key, and the model can be misled and optimize for this key only. I think the validation set should be from the training data.
 
 ## Log
-
+- 8/6 Added profiling script (AI Generated).
 - 8/6 Refactorized the project. Now we can specify all experimenting parameters using a json file.
 - 8/7 Now the validation set is split from the training data, not the attack data (to avoid bais on the same key).
 - 8/5 Add plot output for GE scores in the evaluation script.

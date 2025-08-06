@@ -4,3 +4,9 @@ Result
 __pycache__
 .vscode
 Results
+
+# profiling directories
+Profiling_Results
+GPU_Profiling
+Memory_Profiling
+Flame_Graphs
