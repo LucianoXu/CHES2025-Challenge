@@ -19,10 +19,8 @@ if __name__=="__main__":
     model_type = "mlp" #mlp, cnn
     leakage = "HW" #ID, HW
     train_models = True
-    num_epochs = 50
-    total_num_models = 2
-    nb_traces_attacks = 1700
-    total_nb_traces_attacks = 2000
+    num_epochs = 3
+    total_num_models = 10
 
 
     if not os.path.exists('./Result/'):
@@ -51,7 +49,6 @@ if __name__=="__main__":
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    nb_attacks = 100
     if leakage == 'ID':
         def leakage_fn(att_plt, k):
             return AES_Sbox[k ^ int(att_plt)]
@@ -65,8 +62,9 @@ if __name__=="__main__":
 
 
 
-    dataloadertrain = Custom_Dataset(root='./../', dataset=dataset, leakage="ID",
-                                                 transform=transforms.Compose([ToTensor_trace()]))
+    dataloadertrain = Custom_Dataset(root='./', dataset=dataset, leakage=leakage,
+                                    transform=transforms.Compose([ToTensor_trace()]),
+                                    train_size=100_000, val_size=10_000)
 
     ##########################################################################
 
@@ -76,7 +74,6 @@ if __name__=="__main__":
         # print("Y_profiling:", dataloadertrain.Y_profiling)
         # print("Y_attack:", dataloadertrain.Y_attack)
 
-    dataloadertrain.split_attack_set_validation_test()
     dataloadertrain.choose_phase("train")
     dataloadertest = deepcopy(dataloadertrain)
     dataloadertest.choose_phase("test")
@@ -86,12 +83,14 @@ if __name__=="__main__":
     correct_key = dataloadertrain.correct_key
     X_attack = dataloadertrain.X_attack
     Y_attack = dataloadertrain.Y_attack
-    plt_attack = dataloadertrain.plt_attack
     num_sample_pts = X_attack.shape[-1]
-    #Random Search
+
+    # A random search for hyperparameters
     for num_models in range(total_num_models):
         if train_models == True:
             config = create_hyperparameter_space(model_type)
+            print("config:", config)
+
             np.save(model_root + "model_configuration_"+str(num_models)+".npy", config)
             batch_size = config["batch_size"]
             num_workers = 0
@@ -114,6 +113,3 @@ if __name__=="__main__":
             elif model_type == "cnn":
                 model = CNN(config, num_sample_pts, classes).to(device)
             model.load_state_dict(torch.load(model_root + "model_"+str(num_models)+".pth"))
-        #Evaluate
-        # GE, NTGE = evaluate(device, model, X_attack, plt_attack, correct_key,leakage_fn=leakage_fn, nb_attacks=100, total_nb_traces_attacks=2000, nb_traces_attacks=1700)
-        # np.save(model_root + "/result_"+str(num_models), {"GE": GE, "NTGE": NTGE})

@@ -1,5 +1,6 @@
 import math
 import random
+from typing import Literal
 
 import h5py
 import numpy as np
@@ -7,6 +8,8 @@ from sklearn.metrics import accuracy_score
 from tqdm import tqdm
 import torch
 import torch.nn.functional as F
+
+from numba import njit
 
 AES_Sbox = np.array([
     0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
@@ -46,115 +49,205 @@ AES_Sbox_inv =  np.array([
 ])
 
 def HW(s):
+    '''
+    Calculate the Hamming Weight of a byte.
+    '''
     return bin(s).count("1")
 
-def calculate_HW(data):
+def calculate_HW(data: list[int]|np.ndarray) -> np.ndarray:
+    '''
+    Calculate the Hamming Weight of a list of bytes.
+    '''
     hw = [bin(x).count("1") for x in range(256)]
-    return [hw[int(s)] for s in data]
+    return np.array([hw[int(s)] for s in data])
 
 
-def load_ctf_2025(filename, leakage_model='HW', byte = 0, train_begin = 0, train_end = 100000,test_begin = 0, test_end = 50000):
+def load_ctf_2025(
+        filename: str, 
+        leakage_model: Literal['HW', 'ID']='HW', 
+        byte: int = 0, 
+        train_begin: int = 0, train_end: int = 100000, test_begin: int = 0, test_end: int = 50000):
+    '''
+    filename: path to the h5 dataset
+    leakage_model: the leakage model we consider. 'HW' for Hamming Weight, 'ID' for Intermediate Value.
+    byte: the byte we consider, 0 for the first byte.
+    '''
 
     in_file = h5py.File(filename, "r")
-    X_profiling = np.array(in_file['Profiling_traces/traces'])
-    X_profiling = X_profiling.reshape((X_profiling.shape[0], X_profiling.shape[1]))
 
+    # get the traces
+    X_profiling = np.array(in_file['Profiling_traces/traces']) # (num_example, dim) : (500_000, 7_000)
+    assert X_profiling.ndim == 2, "Profiling traces should be 2D array."
 
-    P_profiling = np.array(in_file['Profiling_traces/metadata'][:]['plaintext'][:, byte])
+    # get the plaintexts
+    P_profiling = np.array(in_file['Profiling_traces/metadata'][:]['plaintext'][:, byte])   # type: ignore # (num_example,) : (500_000,)
+
+    K_profiling = np.array(in_file['Profiling_traces/metadata'][:]['key'][:, byte])   # type: ignore # (num_example,) : (500_000,)
+    # by comparing this two branches, we observe that the labels are bytes after the AES_Sbox operation.
     if byte != 0:
-        key_profiling = np.array(in_file['Profiling_traces/metadata'][:]['key'][:,byte])
         Y_profiling = np.zeros(P_profiling.shape[0])
         print("Loading Y_profiling")
         for i in range(len(P_profiling)): #tqdm()
-            Y_profiling[i] = AES_Sbox[P_profiling[i] ^ key_profiling[i]]
-        if leakage_model == 'HW':
-            Y_profiling = calculate_HW(Y_profiling)
+            Y_profiling[i] = AES_Sbox[P_profiling[i] ^ K_profiling[i]]
     else:
-        Y_profiling = np.array(in_file['Profiling_traces/metadata'][:]['labels'])  # This is only for byte 0
-        if leakage_model == 'HW':
-            Y_profiling = calculate_HW(Y_profiling)
+        # labels are for byte 0
+        Y_profiling = np.array(in_file['Profiling_traces/metadata'][:]['labels'])   # type: ignore # (num_example,) : (500_000,)
+
+    if leakage_model == 'HW':
+        Y_profiling = calculate_HW(Y_profiling)
 
     # Load attack traces
-    X_attack = np.array(in_file['Attack_traces/traces'])
-    X_attack = X_attack.reshape((X_attack.shape[0], X_attack.shape[1]))
+    X_attack = np.array(in_file['Attack_traces/traces'])    # (num_example, dim) : (100_000, 7_000)
+    assert X_attack.ndim == 2, "Attack traces should be 2D array."
 
-    P_attack = np.array(in_file['Attack_traces/metadata'][:]['plaintext'][:, byte])
-    attack_key = np.array(in_file['Attack_traces/metadata'][:]['key'][0, byte]) #Get the real key here (note that attack key are fixed)
-    profiling_key = np.array(in_file['Profiling_traces/metadata'][:]['key'][0, byte]) #Get the real key here (note that attack key are fixed)
-    print(attack_key)
-    print(profiling_key)
+    P_attack = np.array(in_file['Attack_traces/metadata'][:]['plaintext'][:, byte]) # type: ignore # (num_example,) : (100_000,)
+    K_attack = np.array(in_file['Attack_traces/metadata'][:]['key'][:, byte])   # type: ignore # (num_example,) : (100_000,)
+
     if byte != 0:
         print("Loading Y_attack")
-        key_attack = np.array(in_file['Attack_traces/metadata'][:]['key'][:,byte])
         Y_attack = np.zeros(P_attack.shape[0])
         for i in range(len(P_attack)):
-            Y_attack[i] = AES_Sbox[P_attack[i] ^ key_attack[i]]
-        if leakage_model == 'HW':
-            Y_attack = calculate_HW(Y_attack)
+            Y_attack[i] = AES_Sbox[P_attack[i] ^ K_attack[i]]
 
     else:
+        Y_attack = np.array(in_file['Attack_traces/metadata'][:]['labels'])  # type: ignore # (num_example,) : (100_000,)
 
-        Y_attack = np.array(in_file['Attack_traces/metadata'][:]['labels'])
-        if leakage_model == 'HW':
-            Y_attack = calculate_HW(Y_attack)
+    if leakage_model == 'HW':
+        Y_attack = calculate_HW(Y_attack)
 
     print("Information about the dataset: ")
     print("X_profiling total shape", X_profiling.shape)
-    if leakage_model == 'HW':
-        print("Y_profiling total shape", len(Y_profiling))
-    else:
-        print("Y_profiling total shape", Y_profiling.shape)
+    print("Y_profiling total shape", Y_profiling.shape)
     print("P_profiling total shape", P_profiling.shape)
+    
     print("X_attack total shape", X_attack.shape)
-    if leakage_model == 'HW':
-        print("Y_attack total shape", len(Y_attack))
-    else:
-        print("Y_attack total shape", Y_attack.shape)
+    print("Y_attack total shape", Y_attack.shape)
     print("P_attack total shape", P_attack.shape)
-    print("correct key:", attack_key)
+
+    # we know that the key is the same for all traces in the attack split
+    print("correct key:", K_attack[0])
     print()
 
 
-    return (X_profiling[train_begin:train_end], X_attack[test_begin:test_end]), (Y_profiling[train_begin:train_end],  Y_attack[test_begin:test_end]),\
-           (P_profiling[train_begin:train_end],  P_attack[test_begin:test_end]), attack_key
+    return  (X_profiling[train_begin:train_end], X_attack[test_begin:test_end]), \
+            (Y_profiling[train_begin:train_end], Y_attack[test_begin:test_end]), \
+            (P_profiling[train_begin:train_end], P_attack[test_begin:test_end]), \
+            (K_profiling[train_begin:train_end], K_attack[test_begin:test_end])
 
 
 # Objective: GE
-def rk_key(rank_array, key):
+def rk_key(rank_array: np.ndarray, key):
+    '''
+    Calculate the rank of the key in the rank_array.
+
+    rank_array: array of ranks for each key, therefore the shape is (256,).
+    '''
+
     key_val = rank_array[key]
     final_rank = np.float32(np.where(np.sort(rank_array)[::-1] == key_val)[0][0])
+
     if math.isnan(float(final_rank)) or math.isinf(float(final_rank)):
         return np.float32(256)
     else:
         return np.float32(final_rank)
 
-# Compute the evolution of rank
-def rank_compute(prediction, att_plt, correct_key,leakage_fn):
+
+# Hamming weight lookup table for njit optimization
+HW_LOOKUP = np.array([bin(i).count("1") for i in range(256)], dtype=np.int32)
+
+@njit
+def rank_compute_hw_njit(prediction, att_plt, correct_key, sbox):
     '''
-    :param prediction: prediction by the neural network
+    Optimized version for Hamming Weight leakage model using njit.
+    '''
+    (nb_traces, nb_hyp) = prediction.shape
+    
+    key_log_prob = np.zeros(256, dtype=np.float64)
+    prediction_log = np.log(prediction + 1e-40)
+    rank_evol = np.full(nb_traces, 255, dtype=np.float32)
+    
+    for i in range(nb_traces):
+        for k in range(256):
+            intermediate = sbox[k ^ att_plt[i]]
+            hw_value = HW_LOOKUP[intermediate]
+            key_log_prob[k] += prediction_log[i, hw_value]
+            
+        # Inline rk_key functionality
+        key_val = key_log_prob[correct_key]
+        sorted_probs = np.sort(key_log_prob)[::-1]
+        rank = np.where(sorted_probs == key_val)[0][0]
+        rank_evol[i] = np.float32(rank)
+
+    return rank_evol, key_log_prob
+
+@njit
+def rank_compute_id_njit(prediction, att_plt, correct_key, sbox):
+    '''
+    Optimized version for Intermediate Value leakage model using njit.
+    '''
+    (nb_traces, nb_hyp) = prediction.shape
+    
+    key_log_prob = np.zeros(256, dtype=np.float64)
+    prediction_log = np.log(prediction + 1e-40)
+    rank_evol = np.full(nb_traces, 255, dtype=np.float32)
+    
+    for i in range(nb_traces):
+        for k in range(256):
+            y_value = sbox[k ^ att_plt[i]]
+            key_log_prob[k] += prediction_log[i, y_value]
+            
+        # Inline rk_key functionality
+        key_val = key_log_prob[correct_key]
+        sorted_probs = np.sort(key_log_prob)[::-1]
+        rank = np.where(sorted_probs == key_val)[0][0]
+        rank_evol[i] = np.float32(rank)
+
+    return rank_evol, key_log_prob
+
+# Compute the evolution of rank
+def rank_compute(prediction, att_plt, correct_key, leakage_fn):
+    '''
+    :param prediction: prediction by the neural network (probability)
     :param att_plt: attack plaintext
     :return: key_log_prob which is the log probability
     '''
-    # hw = [bin(x).count("1") for x in range(256)]
+    
     (nb_traces, nb_hyp) = prediction.shape
 
+    # note that the key_log_prob is accumulated, therefore this reflects the evolution of the rank.
     key_log_prob = np.zeros(256)
     prediction = np.log(prediction + 1e-40)
     rank_evol = np.full(nb_traces, 255)
     for i in range(nb_traces):
         for k in range(256):
             y_value = leakage_fn(att_plt[i], k)
-            key_log_prob[k] += prediction[i,  y_value]
-            # if leakage == 'ID':
-            #     key_log_prob[k] += prediction[i,  AES_Sbox[k ^ int(att_plt[i])]]
-            # else:
-            #     key_log_prob[k] += prediction[i,  hw[AES_Sbox[k ^ int(att_plt[i])]]]
-        rank_evol[i] =  rk_key(key_log_prob, correct_key) #this will sort it.
+            key_log_prob[k] += prediction[i, y_value]
+            
+        rank_evol[i] = rk_key(key_log_prob, correct_key) # rk_key will sort key_log_prob.
 
     return rank_evol, key_log_prob
 
+def rank_compute_optimized(prediction, att_plt, correct_key, leakage_model='HW'):
+    '''
+    Optimized version that automatically chooses the appropriate njit function.
+    
+    :param prediction: prediction by the neural network (probability)
+    :param att_plt: attack plaintext
+    :param correct_key: the correct key byte
+    :param leakage_model: 'HW' for Hamming Weight, 'ID' for Intermediate Value
+    :return: rank_evol, key_log_prob
+    '''
+    att_plt = att_plt.astype(np.int32)
+    
+    if leakage_model == 'HW':
+        return rank_compute_hw_njit(prediction, att_plt, correct_key, AES_Sbox)
+    elif leakage_model == 'ID':
+        return rank_compute_id_njit(prediction, att_plt, correct_key, AES_Sbox)
+    else:
+        raise ValueError(f"Unsupported leakage model: {leakage_model}")
 
-def perform_attacks( nb_traces, predictions, plt_attack,correct_key,leakage_fn,nb_attacks=1, shuffle=True):
+
+def perform_attacks(nb_traces: int, predictions: np.ndarray, plt_attack, correct_key, leakage_fn, nb_attacks=1, shuffle=True):
     '''
     :param nb_traces: number_traces used to attack
     :param predictions: output of the neural network i.e. prob of each class
@@ -164,6 +257,9 @@ def perform_attacks( nb_traces, predictions, plt_attack,correct_key,leakage_fn,n
     :param shuffle: true then it shuffle
     :return: mean of the rank for each experiments, log_probability of the output for all key
     '''
+
+    # prediction: ()
+
     all_rk_evol = np.zeros((nb_attacks, nb_traces)) #(num_attack, num_traces used)
     all_key_log_prob = np.zeros(256)
     for i in tqdm(range(nb_attacks)): #tqdm()
@@ -183,7 +279,44 @@ def perform_attacks( nb_traces, predictions, plt_attack,correct_key,leakage_fn,n
         all_rk_evol[i] = rank_evol
         all_key_log_prob += key_log_prob
 
+    # return the mean rank evolution across different attacks.
     return np.mean(all_rk_evol, axis=0), key_log_prob, #this will be the last one key_log_prob
+
+def perform_attacks_optimized(nb_traces: int, predictions: np.ndarray, plt_attack, correct_key, leakage_model='HW', nb_attacks=1, shuffle=True):
+    '''
+    Optimized version using njit functions.
+    
+    :param nb_traces: number_traces used to attack
+    :param predictions: output of the neural network i.e. prob of each class
+    :param plt_attack: plaintext from attack traces
+    :param correct_key: the correct key byte
+    :param leakage_model: 'HW' for Hamming Weight, 'ID' for Intermediate Value
+    :param nb_attacks: number of attack experiments
+    :param shuffle: true then it shuffle
+    :return: mean of the rank for each experiments, log_probability of the output for all key
+    '''
+
+    all_rk_evol = np.zeros((nb_attacks, nb_traces))
+    all_key_log_prob = np.zeros(256)
+    
+    for i in tqdm(range(nb_attacks)):
+        if shuffle:
+            l = list(zip(predictions, plt_attack))
+            random.shuffle(l)
+            sp, splt = list(zip(*l))
+            sp = np.array(sp)
+            splt = np.array(splt)
+            att_pred = sp[:nb_traces]
+            att_plt = splt[:nb_traces]
+        else:
+            att_pred = predictions[:nb_traces]
+            att_plt = plt_attack[:nb_traces]
+            
+        rank_evol, key_log_prob = rank_compute_optimized(att_pred, att_plt, correct_key, leakage_model)
+        all_rk_evol[i] = rank_evol
+        all_key_log_prob += key_log_prob
+
+    return np.mean(all_rk_evol, axis=0), key_log_prob
 
 
 
@@ -196,7 +329,7 @@ def proba_to_index( proba, classes):
         prediction[i] = classes[sorted_index[-1]]
     return prediction
 
-def attack_calculate_metrics(model, nb_attacks, nb_traces_attacks,correct_key, X_attack, Y_attack, plt_attack, leakage,dataset):
+def attack_calculate_metrics(model, nb_attacks, nb_traces_attacks,correct_key, X_attack, Y_attack, plt_attack, leakage):
     # Test: Attack on the test traces
     container = np.zeros((1+256+nb_traces_attacks,))
     predictions = model.predict(X_attack[:nb_traces_attacks])
@@ -209,7 +342,9 @@ def attack_calculate_metrics(model, nb_attacks, nb_traces_attacks,correct_key, X
     Y_pred =  proba_to_index(predictions, classes_labels)
     accuracy = accuracy_score(Y_attack[:nb_traces_attacks], Y_pred)
     print('accuracy: ', accuracy)
-    avg_rank, all_rank = perform_attacks(nb_traces_attacks, predictions, plt_attack, correct_key, dataset=dataset,nb_attacks=nb_attacks, shuffle=True, leakage = leakage)
+    
+    # Use the optimized version
+    avg_rank, all_rank = perform_attacks_optimized(nb_traces_attacks, predictions, plt_attack, correct_key, leakage_model=leakage, nb_attacks=nb_attacks, shuffle=True)
 
     #calculate GE
     container[257:] = avg_rank
@@ -221,6 +356,9 @@ def attack_calculate_metrics(model, nb_attacks, nb_traces_attacks,correct_key, X
 
 
 def NTGE_fn(GE):
+    '''
+    Find the index that the GE is stabilized to zero after it.
+    '''
     NTGE = float('inf')
     for i in range(GE.shape[0] - 1, -1, -1):
         if GE[i] > 0:
@@ -241,3 +379,30 @@ def evaluate(device, model, X_attack, plt_attack,correct_key,leakage_fn, nb_atta
     print("GE", GE)
     print("NTGE", NTGE)
     return GE,NTGE
+
+def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage_model='HW', nb_attacks=100, total_nb_traces_attacks=2000, nb_traces_attacks=1700):
+    """
+    Optimized version of evaluate function using njit-optimized rank computation.
+    
+    :param device: torch device
+    :param model: trained model
+    :param X_attack: attack traces
+    :param plt_attack: attack plaintexts
+    :param correct_key: correct key byte
+    :param leakage_model: 'HW' for Hamming Weight, 'ID' for Intermediate Value
+    :param nb_attacks: number of attack experiments
+    :param total_nb_traces_attacks: total number of attack traces to load
+    :param nb_traces_attacks: number of traces to use in each attack
+    :return: GE, NTGE
+    """
+    attack_traces = torch.from_numpy(X_attack[:total_nb_traces_attacks]).to(device).unsqueeze(1).float()
+    predictions_wo_softmax = model(attack_traces)
+    predictions = F.softmax(predictions_wo_softmax, dim=1)
+    predictions = predictions.cpu().detach().numpy()
+    
+    GE, key_prob = perform_attacks_optimized(nb_traces_attacks, predictions, plt_attack, correct_key, 
+                                           leakage_model=leakage_model, nb_attacks=nb_attacks, shuffle=True)
+    NTGE = NTGE_fn(GE)
+    print("GE", GE)
+    print("NTGE", NTGE)
+    return GE, NTGE

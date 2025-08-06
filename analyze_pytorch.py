@@ -8,13 +8,11 @@ from torchvision.transforms import transforms
 from src.dataloader import ToTensor_trace, Custom_Dataset
 from src.net import create_hyperparameter_space, MLP, CNN
 from src.trainer import trainer
-from src.utils import evaluate, AES_Sbox, calculate_HW
+from src.utils import evaluate, AES_Sbox, calculate_HW, evaluate_optimized
 
 if __name__=="__main__":
     dataset = "CHES_2025"
     leakage = "HW"
-    nb_traces_attacks = 100000
-    total_nb_traces_attacks = 100000
 
     seed = 0
     random.seed(seed)
@@ -26,36 +24,33 @@ if __name__=="__main__":
     torch.backends.cudnn.benchmark = False
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    nb_attacks = 100
 
-
-
-    dataloadertest = Custom_Dataset(root='./../', dataset=dataset, leakage="ID", #change root to where you download your dataset.
-                                                 transform=transforms.Compose([ToTensor_trace()]))
+    dataloadertest = Custom_Dataset(root='./', dataset=dataset, leakage="ID", #change root to where you download your dataset.
+                                    transform=transforms.Compose([ToTensor_trace()]),
+                                    train_size=100_000, val_size=10_000, test_size=100_000)
     #########################################################################
     if leakage == 'ID':
         def leakage_fn(att_plt, k):
             return AES_Sbox[k ^ int(att_plt)]
         classes = 256
-    elif leakage == 'HW':
 
+    elif leakage == 'HW':
         # hw = [bin(x).count("1") for x in range(256)]
         def leakage_fn(att_plt, k):
             return bin(int(AES_Sbox[k ^ int(att_plt)])).count("1")
         classes = 9
         dataloadertest.Y_attack = dataloadertest.Y_attack
+
     else:
         ####TODO: You can change the code here if you want to create your own leakage model.
         pass
 
 
-
-    dataloadertest.split_attack_set_validation_test()
     dataloadertest.choose_phase("test")
     correct_key = dataloadertest.correct_key
     X_attack = dataloadertest.X_attack
     Y_attack = dataloadertest.Y_attack
-    plt_attack = dataloadertest.plt_attack
+    plt_attack = dataloadertest.P_attack
     num_sample_pts = X_attack.shape[-1]
 
 
@@ -66,12 +61,37 @@ if __name__=="__main__":
     save_root = root + dataset + "_" + model_type + "_" + leakage + "/"
     model_root = save_root + "models/"
     config = np.load(model_root + "model_configuration_0.npy", allow_pickle=True).item()
+    print("config:", config)
     model = MLP(config, num_sample_pts, classes).to(device)
     model.load_state_dict(torch.load(model_root + "model_0.pth"))
     ###############################################################################
 
 
     ####All model will be evaluated based on this function, if it does not adhere to the following, it will be eliminated. ##################
-    GE, NTGE = evaluate(device, model, X_attack, plt_attack, correct_key, leakage_fn=leakage_fn, nb_attacks=100,
-                        total_nb_traces_attacks=2000, nb_traces_attacks=1700)
+
+    # original version
+    # GE, NTGE = evaluate(device, model, X_attack, plt_attack, correct_key, leakage_fn=leakage_fn, nb_attacks=100,
+    #                     total_nb_traces_attacks=2000, nb_traces_attacks=1700)
+
+    # optimized version
+    GE, NTGE = evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage_model=leakage, 
+                                  nb_attacks=1, total_nb_traces_attacks=100_000, nb_traces_attacks=100_000,)
+    
+    # output the results to .csv file
+
+    with open(save_root + "GE.csv", "w") as f:
+        print("Outputting GE to file...")
+        for i in range(GE.shape[0]):
+            f.write(f"{GE[i]}\n")
+        print("Done.")
+
+    # use matplotlib to plot the GE
+    import matplotlib.pyplot as plt
+    plt.plot(GE, label='GE')
+    plt.xlabel('Number of traces')
+    plt.ylabel('GE')
+    plt.title(f'GE for {dataset} with {model_type}')
+    plt.legend()
+    plt.savefig(save_root + "GE_plot.png")
+    plt.close()
 
