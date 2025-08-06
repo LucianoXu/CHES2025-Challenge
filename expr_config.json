@@ -1,14 +1,14 @@
 {
     "output_dir": "./Results",
-    "codename": "M",
-    "expr_num": 18,
+    "codename": "MH",
+    "expr_num": 19,
     "comment": "Manual Run.",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
     "train_size": 480000,
     "val_size": 20000,
     "test_size": 100000,
-    "leakage": "ID",
+    "leakage": "HW",
 
     "data_augmentation": false,
     "aug_gaussian_noise": 0.01,

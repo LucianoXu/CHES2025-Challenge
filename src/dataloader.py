@@ -1,7 +1,7 @@
 from typing import Callable, Literal
 import numpy as np
 from torch.utils.data import Dataset
-from src.utils import calculate_HW, load_ctf_2025
+from src.utils import calculate_HW_single, load_ctf_2025
 import torch
 from .config import Config
 
@@ -140,10 +140,10 @@ class SCA_Dataset(Dataset):
         self.P = P
         self.K = K
 
-        self.leakage_fun : Callable[[np.ndarray], np.ndarray]
+        self.leakage_fun : Callable
 
         if self.config['leakage'] == 'HW':
-            self.leakage_fun = calculate_HW
+            self.leakage_fun = calculate_HW_single
 
         elif self.config['leakage'] == 'ID':
             self.leakage_fun = lambda x: x
@@ -172,9 +172,7 @@ class SCA_Dataset(Dataset):
     def __len__(self):
         return len(self.X)
 
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
+    def __getitem__(self, idx: int):
 
         trace = self.X[idx]
         sensitive = self.leakage_fun(self.Y[idx])
