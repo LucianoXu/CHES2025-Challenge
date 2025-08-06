@@ -33,6 +33,7 @@ class MLP(nn.Module):
         return (sum(p.numel() for p in self.parameters() if p.requires_grad))
 
     def forward(self, x):
+        x = x.transpose(1, 2)  # (N, T, 1) -> (N, 1, T)
         for layer in self.layers:
             x = layer(x)
         x = self.softmax_layer(x) #F.softmax()

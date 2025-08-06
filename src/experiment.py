@@ -41,24 +41,16 @@ def experiment(expr_config: Config):
     # save the configuration
     expr_config.save_config()
 
-    batch_size = expr_config["batch_size"]
-    num_workers = 0
-
-    dataloaders = {
-        "train": torch.utils.data.DataLoader(
-            SCA_Dataset(expr_config, X_train, Y_train, P_train, K_train),
-            batch_size=batch_size,
-            shuffle=True,
-            num_workers=num_workers
-        ),
-        "val": torch.utils.data.DataLoader(
-            SCA_Dataset(expr_config, X_val, Y_val, P_val, K_val),
-            batch_size=batch_size,
-            shuffle=True, 
-            num_workers=num_workers
-        ),                          
+    datasets = {
+        "train": SCA_Dataset(expr_config, X_train, Y_train, P_train, K_train),
+        "val": SCA_Dataset(expr_config, X_val, Y_val, P_val, K_val),
+        "test": SCA_Dataset(expr_config, X_test, Y_test, P_test, K_test),
     }
 
-    model = trainer(expr_config, dataloaders, SCA_Dataset(expr_config, X_test, Y_test, P_test, K_test), device)
+    model = trainer(
+        config=expr_config, 
+        datasets=datasets,
+        device=device
+    )
 
     torch.save(model.state_dict(), expr_config.model_path)

@@ -18,6 +18,11 @@ def create_config_template() -> dict:
 
         "leakage": "ID",
 
+        # data augmentation parameters
+        "data_augmentation": True,  # whether to use data augmentation
+        "aug_gaussian_noise": 0.1, # standard deviation of the Gaussian noise
+        "aug_random_shift": 30, # maximum random shift in samples
+
         "model": "mlp",
         "model_args": {
             "input_dim": 7000,

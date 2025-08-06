@@ -40,6 +40,8 @@ pip install -r requirements.txt
 
 - We can let the model predict both the `ID` leakage and the `HW` leakage, and make sure they are consistent.
 
+- We have 500K training traces for 256 different keys. This means 2K traces per key in average. If our model performs really well, we can use these data to test the model more comprehensively.
+
 ## Observations
 
 - The `leakage_model` determines what kind of leakge the DL model tries to extract from the power trace. The key is then reconstructed from the model.
@@ -54,7 +56,12 @@ pip install -r requirements.txt
 
 - Overfitting is a huge problem. Even if the validation loss keeps dropping after the first several epochs, the actual test performance will still decrease.
 
+- Even validation loss cannot reliably predict the result of real test NTGE score. This is strange.
+
+- Data augumentation indeed helps reduce overfitting, but later training still cannot improve the performance. The non-arguemented version is still better.
+
 ## Log
+- 8/6 Add data augmentation by Gaussian noise and random shift
 - **8/6 We obtained an excellent model `M8`, which achieves 10K score by a 4-layer MLP.**
 - 8/6 Add early stop by validation loss.
 - 8/6 Added profiling script (AI Generated).

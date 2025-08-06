@@ -9,7 +9,7 @@ from .dataloader import SCA_Dataset
 from src.utils import evaluate_optimized
 from .config import Config
 
-def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SCA_Dataset, device) -> nn.Module:
+def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> nn.Module:
     '''
     The training will make use of all training data in the dataloader.
     '''
@@ -62,8 +62,20 @@ def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SC
             running_loss = 0.0
             running_corrects = 0
 
+            ds = datasets[phase]  # tqdm(dataloader[phase])
+
+            # augument the dataset (or not) for training
+            if phase == 'train':
+                ds = ds.augment(device)
+
+            tk0 = torch.utils.data.DataLoader(
+                ds,
+                batch_size=config["batch_size"],
+                shuffle=True,
+                num_workers=0
+            )
+
             # Iterate over all data (one epoch).
-            tk0 = dataloaders[phase]  # tqdm(dataloader[phase])
             for (traces, labels) in tk0:
                 inputs = traces.to(device)
                 labels = labels.to(device)
@@ -125,6 +137,7 @@ def trainer(config: Config, dataloaders: dict[str, DataLoader], dataset_test: SC
 
     # evaluate GE and NTGE
 
+    dataset_test = datasets['test']
     correct_key = dataset_test.K[0]
 
     print("Evaluation GE/NTGE score ...")
