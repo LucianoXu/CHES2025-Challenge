@@ -177,8 +177,6 @@ def rank_compute_hw_njit(prediction, att_plt, correct_key, sbox):
         rank = np.where(sorted_probs == key_val)[0][0]
         rank_evol[i] = np.float32(rank)
 
-    key_log_prob /= nb_traces  # Normalize the key_log_prob by the number of traces
-
     return rank_evol, key_log_prob
 
 @njit
@@ -202,8 +200,6 @@ def rank_compute_id_njit(prediction, att_plt, correct_key, sbox):
         sorted_probs = np.sort(key_log_prob)[::-1]
         rank = np.where(sorted_probs == key_val)[0][0]
         rank_evol[i] = np.float32(rank)
-
-    key_log_prob /= nb_traces  # Normalize the key_log_prob by the number of traces
 
     return rank_evol, key_log_prob
 
@@ -299,8 +295,9 @@ def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage
     predictions = F.softmax(predictions_wo_softmax, dim=1)
     predictions = predictions.cpu().detach().numpy()
     
-    GE, key_log_prob = perform_attacks_optimized(attack_trace_usage, predictions, plt_attack, correct_key, 
-                                           leakage_model=leakage_model, nb_attacks=nb_attacks, shuffle=True)
+    GE, key_log_prob = perform_attacks_optimized(
+        attack_trace_usage, predictions, plt_attack, correct_key, 
+        leakage_model=leakage_model, nb_attacks=nb_attacks, shuffle=True)
     NTGE = NTGE_fn(GE)
     print("GE", GE)
     print("NTGE", NTGE)
@@ -332,7 +329,7 @@ def __key_log_prob_calc(log_likelihood: np.ndarray, Y: np.ndarray, K: np.ndarray
 
 def key_wise_log_likelihood(model: torch.nn.Module, X: np.ndarray, Y: np.ndarray, K: np.ndarray, device) -> np.ndarray:
     """
-    Calculate key-wise log likelihood for each key byte.
+    Calculate key-wise log likelihood of correct prediction for each key byte.
     
     :param model: trained model
     :param X: input traces, np.ndarray of shape (N, T, 1)

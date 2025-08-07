@@ -70,6 +70,8 @@ pip install -r requirements.txt
 
 - Observing test set key-wise log probability distribution, we find that the probability of different key are really close to each other. This suggest that our model is too weak to make meaning predictions.
 
+- With log probability analysis we found that the log prob for test is much smaller than that of validation. This explains why validation performance is not corelated to that of the test data set.
+
 ## Log
 - 8/7 Add test set key-wise log probability distribution evaluation.
 - 8/7 Add window layer.

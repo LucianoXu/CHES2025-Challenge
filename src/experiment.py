@@ -170,8 +170,9 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         total_nb_traces_attacks=100_000, 
         attack_trace_usage=100_000,)
     # record the test key log likelihood distribution
+    # the values will be large negative numbers because they are probabilities product of joint events (k0,k0, ..., k0) throughout the whole trace
     key_wise_log_likelihood_plot(
-        "Test Key-wise Log-Likelihood Distribution",
+        "Test Joint Key Log-Likelihood Distribution",
         test_key_log_prob,
         writer,
         highlight_indices=[correct_key],
@@ -192,8 +193,8 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     print("Score: ", score)
     print("Results saved to tensorboard.")
 
-    # calculate key-wise log-likelihood distribution and write to tensorboard
-    print("Calculating Key-wise  Log-Likelihood Distribution ...")
+    # for validation, calculate key-wise log-likelihood distribution and write to tensorboard
+    print("Val: Calculating Key-wise Log-Likelihood Distribution ...")
     val_key_log_prob = key_wise_log_likelihood(
         model, 
         datasets['val'].X, 
@@ -207,6 +208,19 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         writer
     )
     print("Results saved to tensorboard.")
+
+    # for test, calculate key-wise log-likelihood distribution and write to tensorboard
+    print("Test: Calculating Key-wise Log-Likelihood Distribution ...")
+    test_key_log_prob = key_wise_log_likelihood(
+        model,
+        datasets['test'].X,
+        datasets['test'].Y,
+        datasets['test'].K,
+        device=device
+    )
+    correct_key_log_likelihood = test_key_log_prob[correct_key]
+    print(f"Correct key log likelihood: {correct_key_log_likelihood}")
+    writer.add_scalar(f'Test Key Log-Likelihood', correct_key_log_likelihood, 0)
 
     print("Done.")
 
@@ -238,7 +252,7 @@ def experiment(expr_config: Config, seed: int|None = 0) -> float:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    device = "cuda:0"
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
     # load data
     (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_test, Y_test, P_test, K_test)= load_data(expr_config, device)

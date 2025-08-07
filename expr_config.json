@@ -1,8 +1,8 @@
 {
     "output_dir": "./Results",
-    "codename": "WM",
-    "expr_num": 39,
-    "comment": "Windowed MLP.",
+    "codename": "M",
+    "expr_num": 41,
+    "comment": "MLP.",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
     "train_size": 480000,
@@ -14,11 +14,8 @@
     "aug_gaussian_noise": 0.02,
     "aug_random_shift": 5,
 
-    "model": "window_mlp",
+    "model": "mlp",
     "model_args": {
-        "start_indices": 0,
-        "window_size": 7000,
-
         "input_dim": 7000,
         "output_dim": 256,
         "layers": 4,
