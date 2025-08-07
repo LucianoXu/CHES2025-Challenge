@@ -38,6 +38,8 @@ def create_config_template() -> dict:
         "lr": 1e-4,
         "batch_size": 256,
         "num_epochs": 5,
+
+        "num_attaks": 10,
     }
 
 class Config:

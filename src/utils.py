@@ -326,10 +326,10 @@ def proba_to_index( proba, classes):
         prediction[i] = classes[sorted_index[-1]]
     return prediction
 
-def attack_calculate_metrics(model, nb_attacks, nb_traces_attacks,correct_key, X_attack, Y_attack, plt_attack, leakage):
+def attack_calculate_metrics(model, nb_attacks, attack_trace_usage,correct_key, X_attack, Y_attack, plt_attack, leakage):
     # Test: Attack on the test traces
-    container = np.zeros((1+256+nb_traces_attacks,))
-    predictions = model.predict(X_attack[:nb_traces_attacks])
+    container = np.zeros((1+256+attack_trace_usage,))
+    predictions = model.predict(X_attack[:attack_trace_usage])
     print("predictions:",predictions.shape)
     if leakage == 'HW':
         classes = 9
@@ -337,11 +337,11 @@ def attack_calculate_metrics(model, nb_attacks, nb_traces_attacks,correct_key, X
         classes = 256
     classes_labels = range(classes)
     Y_pred =  proba_to_index(predictions, classes_labels)
-    accuracy = accuracy_score(Y_attack[:nb_traces_attacks], Y_pred)
+    accuracy = accuracy_score(Y_attack[:attack_trace_usage], Y_pred)
     print('accuracy: ', accuracy)
     
     # Use the optimized version
-    avg_rank, all_rank = perform_attacks_optimized(nb_traces_attacks, predictions, plt_attack, correct_key, leakage_model=leakage, nb_attacks=nb_attacks, shuffle=True)
+    avg_rank, all_rank = perform_attacks_optimized(attack_trace_usage, predictions, plt_attack, correct_key, leakage_model=leakage, nb_attacks=nb_attacks, shuffle=True)
 
     #calculate GE
     container[257:] = avg_rank
@@ -365,19 +365,19 @@ def NTGE_fn(GE):
     return NTGE
 
 
-def evaluate(device, model, X_attack, plt_attack,correct_key,leakage_fn, nb_attacks=100, total_nb_traces_attacks=2000, nb_traces_attacks = 1700):
+def evaluate(device, model, X_attack, plt_attack,correct_key,leakage_fn, nb_attacks=100, total_nb_traces_attacks=2000, attack_trace_usage = 1700):
     attack_traces = torch.from_numpy(X_attack[:total_nb_traces_attacks]).to(device).unsqueeze(1).float()
     predictions_wo_softmax = model(attack_traces)
     predictions = F.softmax(predictions_wo_softmax, dim=1)
     predictions = predictions.cpu().detach().numpy()
-    GE, key_prob = perform_attacks(nb_traces_attacks, predictions, plt_attack, correct_key,
+    GE, key_prob = perform_attacks(attack_trace_usage, predictions, plt_attack, correct_key,
                                    nb_attacks=nb_attacks, shuffle=True, leakage_fn=leakage_fn)
     NTGE = NTGE_fn(GE)
     print("GE", GE)
     print("NTGE", NTGE)
     return GE,NTGE
 
-def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage_model='HW', nb_attacks=100, total_nb_traces_attacks=2000, nb_traces_attacks=1700):
+def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage_model='HW', nb_attacks=100, total_nb_traces_attacks=2000, attack_trace_usage=1700):
     """
     Optimized version of evaluate function using njit-optimized rank computation.
     
@@ -389,7 +389,7 @@ def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage
     :param leakage_model: 'HW' for Hamming Weight, 'ID' for Intermediate Value
     :param nb_attacks: number of attack experiments
     :param total_nb_traces_attacks: total number of attack traces to load
-    :param nb_traces_attacks: number of traces to use in each attack
+    :param attack_trace_usage: number of traces to use in each attack
     :return: GE, NTGE
     """
     attack_traces = torch.from_numpy(X_attack[:total_nb_traces_attacks]).to(device).float()
@@ -397,7 +397,7 @@ def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage
     predictions = F.softmax(predictions_wo_softmax, dim=1)
     predictions = predictions.cpu().detach().numpy()
     
-    GE, key_prob = perform_attacks_optimized(nb_traces_attacks, predictions, plt_attack, correct_key, 
+    GE, key_prob = perform_attacks_optimized(attack_trace_usage, predictions, plt_attack, correct_key, 
                                            leakage_model=leakage_model, nb_attacks=nb_attacks, shuffle=True)
     NTGE = NTGE_fn(GE)
     print("GE", GE)
