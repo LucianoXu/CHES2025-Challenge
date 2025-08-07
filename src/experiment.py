@@ -11,10 +11,13 @@ from .dataloader import load_data, SCA_Dataset
 from .trainer import trainer
 from .config import Config, create_config_template
 
-def experiment(expr_config: Config):
+def experiment(expr_config: Config, seed: int|None = 0) -> float:
     '''
     Do the experiment of training and evaluating the model for the given configuration.
     The results will be saved in the output directory specified in the configuration, including configuration file, model weights, and evaluation results.
+
+    Returns:
+        score: the score for this competition (upper bounded by 200K)
     '''
 
     print("Configuration:\n", expr_config.get_json())
@@ -23,13 +26,14 @@ def experiment(expr_config: Config):
     if not os.path.exists(expr_config.output_folder):
         os.makedirs(expr_config.output_folder, exist_ok=True)
 
-    # initialize device
-    seed = 0
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    # set the seed
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -47,10 +51,12 @@ def experiment(expr_config: Config):
         "test": SCA_Dataset(expr_config, X_test, Y_test, P_test, K_test),
     }
 
-    model = trainer(
+    model, score = trainer(
         config=expr_config, 
         datasets=datasets,
         device=device
     )
 
     torch.save(model.state_dict(), expr_config.model_path)
+
+    return score

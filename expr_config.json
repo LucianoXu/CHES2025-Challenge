@@ -1,7 +1,7 @@
 {
     "output_dir": "./Results",
     "codename": "MH",
-    "expr_num": 19,
+    "expr_num": 20,
     "comment": "Manual Run.",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
@@ -17,7 +17,7 @@
     "model": "mlp",
     "model_args": {
         "input_dim": 7000,
-        "output_dim": 256,
+        "output_dim": 9,
         "layers": 4,
         "hidden_dim": 300,
         "activation": "relu"
@@ -28,5 +28,5 @@
 
     "lr": 0.0001,
     "batch_size": 1000,
-    "num_epochs": 3
+    "num_epochs": 10
 }

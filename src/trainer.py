@@ -9,9 +9,13 @@ from .dataloader import SCA_Dataset
 from src.utils import evaluate_optimized
 from .config import Config
 
-def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> nn.Module:
+def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[nn.Module, float]:
     '''
     The training will make use of all training data in the dataloader.
+
+    Returns:
+        model: the trained model
+        score: the score for this competition (upper bounded by 200K)
     '''
 
     model_type = config["model"]
@@ -154,7 +158,13 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> nn.Modu
     for i, val in enumerate(GE):
         writer.add_scalar(f'GE', val, i)
 
-    writer.add_scalar(f"NTGE", NTGE, global_step=0)
+    # calculate the score
+    if NTGE == float('inf'):
+        score = 200_000
+    else:
+        score = NTGE
+
+    writer.add_scalar(f"Score", score, global_step=0)
     print("Done.")
 
-    return model
+    return model, score

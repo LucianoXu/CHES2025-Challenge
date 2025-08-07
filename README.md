@@ -27,6 +27,10 @@ pip install -r requirements.txt
 
 - `run_profiling.py`: The launcher for profiling.
 
+- `random_training_loop.py`: The launcher for hyperparameter searching random training, according to `random_config_ranges.json`. The information summary for different random trainings will be collected and presented in a `.csv` file in the output folder.
+
+- `random_config_ranges.json`: Configuration file for `random_training_loop.py`.
+
 - `Results`: The configurations, model parameters and evaluation results of all trainings are preserved here.
 
 
@@ -61,6 +65,7 @@ pip install -r requirements.txt
 - Data augumentation indeed helps reduce overfitting, but later training still cannot improve the performance. The non-arguemented version is still better.
 
 ## Log
+- 8/7 Add hyperparameter searching random training.
 - 8/6 Add data augmentation by Gaussian noise and random shift
 - **8/6 We obtained an excellent model `M8`, which achieves 10K score by a 4-layer MLP.**
 - 8/6 Add early stop by validation loss.
@@ -69,3 +74,7 @@ pip install -r requirements.txt
 - 8/7 Now the validation set is split from the training data, not the attack data (to avoid bais on the same key).
 - 8/5 Add plot output for GE scores in the evaluation script.
 - 8/5 Use `numba` just-in-time compilation optimization and evaluation speeds up for 10 times. Correctness verified.
+
+## TODO
+- Add monitor for key_log_prob evolution.
+- Add same key validation set
