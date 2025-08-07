@@ -1,6 +1,6 @@
 import math
 import random
-from typing import Literal
+from typing import Literal, Sequence
 
 import h5py
 import numpy as np
@@ -9,6 +9,7 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
+import matplotlib.pyplot as plt
 
 from numba import njit
 
@@ -176,6 +177,8 @@ def rank_compute_hw_njit(prediction, att_plt, correct_key, sbox):
         rank = np.where(sorted_probs == key_val)[0][0]
         rank_evol[i] = np.float32(rank)
 
+    key_log_prob /= nb_traces  # Normalize the key_log_prob by the number of traces
+
     return rank_evol, key_log_prob
 
 @njit
@@ -200,30 +203,10 @@ def rank_compute_id_njit(prediction, att_plt, correct_key, sbox):
         rank = np.where(sorted_probs == key_val)[0][0]
         rank_evol[i] = np.float32(rank)
 
-    return rank_evol, key_log_prob
-
-# Compute the evolution of rank
-def rank_compute(prediction, att_plt, correct_key, leakage_fn):
-    '''
-    :param prediction: prediction by the neural network (probability)
-    :param att_plt: attack plaintext
-    :return: key_log_prob which is the log probability
-    '''
-    
-    (nb_traces, nb_hyp) = prediction.shape
-
-    # note that the key_log_prob is accumulated, therefore this reflects the evolution of the rank.
-    key_log_prob = np.zeros(256)
-    prediction = np.log(prediction + 1e-40)
-    rank_evol = np.full(nb_traces, 255)
-    for i in range(nb_traces):
-        for k in range(256):
-            y_value = leakage_fn(att_plt[i], k)
-            key_log_prob[k] += prediction[i, y_value]
-            
-        rank_evol[i] = rk_key(key_log_prob, correct_key) # rk_key will sort key_log_prob.
+    key_log_prob /= nb_traces  # Normalize the key_log_prob by the number of traces
 
     return rank_evol, key_log_prob
+
 
 def rank_compute_optimized(prediction, att_plt, correct_key, leakage_model='HW'):
     '''
@@ -244,41 +227,6 @@ def rank_compute_optimized(prediction, att_plt, correct_key, leakage_model='HW')
     else:
         raise ValueError(f"Unsupported leakage model: {leakage_model}")
 
-
-def perform_attacks(nb_traces: int, predictions: np.ndarray, plt_attack, correct_key, leakage_fn, nb_attacks=1, shuffle=True):
-    '''
-    :param nb_traces: number_traces used to attack
-    :param predictions: output of the neural network i.e. prob of each class
-    :param plt_attack: plaintext from attack traces
-    :param nb_attacks: number of attack experiments
-    :param byte: byte in questions
-    :param shuffle: true then it shuffle
-    :return: mean of the rank for each experiments, log_probability of the output for all key
-    '''
-
-    # prediction: ()
-
-    all_rk_evol = np.zeros((nb_attacks, nb_traces)) #(num_attack, num_traces used)
-    all_key_log_prob = np.zeros(256)
-    for i in tqdm(range(nb_attacks)): #tqdm()
-        if shuffle:
-            l = list(zip(predictions, plt_attack)) #list of [prediction, plaintext_attack]
-            random.shuffle(l) #shuffle the each other prediction
-            sp, splt = list(zip(*l)) #*l = unpacking, output: shuffled predictions and shuffled plaintext.
-            sp = np.array(sp)
-            splt = np.array(splt)
-            att_pred = sp[:nb_traces] #just use the required number of traces
-            att_plt = splt[:nb_traces]
-
-        else:
-            att_pred = predictions[:nb_traces]
-            att_plt = plt_attack[:nb_traces]
-        rank_evol, key_log_prob = rank_compute(att_pred, att_plt,correct_key,leakage_fn=leakage_fn)
-        all_rk_evol[i] = rank_evol
-        all_key_log_prob += key_log_prob
-
-    # return the mean rank evolution across different attacks.
-    return np.mean(all_rk_evol, axis=0), key_log_prob, #this will be the last one key_log_prob
 
 def perform_attacks_optimized(nb_traces: int, predictions: np.ndarray, plt_attack, correct_key, leakage_model='HW', nb_attacks=1, shuffle=True):
     '''
@@ -314,43 +262,9 @@ def perform_attacks_optimized(nb_traces: int, predictions: np.ndarray, plt_attac
         all_rk_evol[i] = rank_evol
         all_key_log_prob += key_log_prob
 
+    all_key_log_prob /= nb_attacks  # Average log probabilities over all attacks
+
     return np.mean(all_rk_evol, axis=0), key_log_prob
-
-
-
-def proba_to_index( proba, classes):
-    number_traces = proba.shape[0]
-    prediction = np.zeros((number_traces))
-    for i in range(number_traces):
-        sorted_index = np.argsort(proba[i])
-        # Store the index of the most possible cluster
-        prediction[i] = classes[sorted_index[-1]]
-    return prediction
-
-def attack_calculate_metrics(model, nb_attacks, attack_trace_usage,correct_key, X_attack, Y_attack, plt_attack, leakage):
-    # Test: Attack on the test traces
-    container = np.zeros((1+256+attack_trace_usage,))
-    predictions = model.predict(X_attack[:attack_trace_usage])
-    print("predictions:",predictions.shape)
-    if leakage == 'HW':
-        classes = 9
-    elif leakage == 'ID':
-        classes = 256
-    classes_labels = range(classes)
-    Y_pred =  proba_to_index(predictions, classes_labels)
-    accuracy = accuracy_score(Y_attack[:attack_trace_usage], Y_pred)
-    print('accuracy: ', accuracy)
-    
-    # Use the optimized version
-    avg_rank, all_rank = perform_attacks_optimized(attack_trace_usage, predictions, plt_attack, correct_key, leakage_model=leakage, nb_attacks=nb_attacks, shuffle=True)
-
-    #calculate GE
-    container[257:] = avg_rank
-    container[1:257] = all_rank
-
-    # calculate accuracy
-    container[0] = accuracy
-    return container
 
 
 def NTGE_fn(GE):
@@ -365,19 +279,6 @@ def NTGE_fn(GE):
             NTGE = i
     return NTGE
 
-
-def evaluate(device, model, X_attack, plt_attack,correct_key,leakage_fn, nb_attacks=100, total_nb_traces_attacks=2000, attack_trace_usage = 1700):
-    attack_traces = torch.from_numpy(X_attack[:total_nb_traces_attacks]).to(device).unsqueeze(1).float()
-    predictions_wo_softmax = model(attack_traces)
-    predictions = F.softmax(predictions_wo_softmax, dim=1)
-    predictions = predictions.cpu().detach().numpy()
-    GE, key_prob = perform_attacks(attack_trace_usage, predictions, plt_attack, correct_key,
-                                   nb_attacks=nb_attacks, shuffle=True, leakage_fn=leakage_fn)
-    NTGE = NTGE_fn(GE)
-    print("GE", GE)
-    print("NTGE", NTGE)
-    return GE,NTGE
-
 def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage_model='HW', nb_attacks=100, total_nb_traces_attacks=2000, attack_trace_usage=1700):
     """
     Optimized version of evaluate function using njit-optimized rank computation.
@@ -391,19 +292,19 @@ def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage
     :param nb_attacks: number of attack experiments
     :param total_nb_traces_attacks: total number of attack traces to load
     :param attack_trace_usage: number of traces to use in each attack
-    :return: GE, NTGE
+    :return: GE, NTGE, key_log_prob
     """
     attack_traces = torch.from_numpy(X_attack[:total_nb_traces_attacks]).to(device).float()
     predictions_wo_softmax = model(attack_traces)
     predictions = F.softmax(predictions_wo_softmax, dim=1)
     predictions = predictions.cpu().detach().numpy()
     
-    GE, key_prob = perform_attacks_optimized(attack_trace_usage, predictions, plt_attack, correct_key, 
+    GE, key_log_prob = perform_attacks_optimized(attack_trace_usage, predictions, plt_attack, correct_key, 
                                            leakage_model=leakage_model, nb_attacks=nb_attacks, shuffle=True)
     NTGE = NTGE_fn(GE)
     print("GE", GE)
     print("NTGE", NTGE)
-    return GE, NTGE
+    return GE, NTGE, key_log_prob
 
 
 @njit
@@ -449,22 +350,50 @@ def key_wise_log_likelihood(model: torch.nn.Module, X: np.ndarray, Y: np.ndarray
     # categorize predictions based on key bytes
     return __key_log_prob_calc(log_likelihood, Y, K)
 
-def key_wise_log_likelihood_plot(key_log_prob: np.ndarray, writer: SummaryWriter):
+def key_wise_log_likelihood_plot(
+        title: str,
+        key_log_prob: np.ndarray,
+        writer: SummaryWriter,
+        highlight_indices: Sequence[int] | None = None,
+        global_step: int = 0,
+):
     """
-    Plot key-wise log likelihood using TensorBoard.
-    
-    :param key_log_prob: log probabilities for each key byte, np.ndarray of shape (256,)
-    :param writer: TensorBoard SummaryWriter
+    Plot key-wise log-likelihoods with optional highlighted bars.
+
+    Parameters
+    ----------
+    key_log_prob : np.ndarray
+        Log-likelihoods for each key, shape = (N,).
+    writer : SummaryWriter
+        TensorBoard writer.
+    highlight_indices : Sequence[int] | None, optional
+        Indices of bars to highlight in red and annotate.
+    global_step : int, optional
+        Global step for TensorBoard.
     """
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(12, 6), dpi=150)
-    plt.bar(range(len(key_log_prob)), key_log_prob)
-    plt.xlabel('Key', fontsize=12)
-    plt.ylabel('Log-Likelihood', fontsize=12)
-    plt.title('Key-wise Log-Likelihood Distribution', fontsize=14)
-    plt.tick_params(axis='both', which='major', labelsize=10)
-    plt.tight_layout()
-    # save the plot in the tensorboard writer
-    writer.add_figure('Key-wise Log-Likelihood Distribution', plt.gcf(), global_step=0)
+    if highlight_indices is None:
+        highlight_indices = []
 
+    keys = np.arange(len(key_log_prob))
+    # Color every bar blue except those selected, which are red
+    bar_colors = ['red' if i in highlight_indices else 'steelblue' for i in keys]
 
+    fig, ax = plt.subplots(figsize=(12, 6), dpi=100)
+    ax.bar(keys, key_log_prob, color=bar_colors)
+
+    # Annotate highlighted bars with the numeric value
+    for idx in highlight_indices:
+        y = key_log_prob[idx]
+        ax.text(idx, y, f'{y:.2f}', ha='center', va='bottom',
+                fontsize=9, rotation=90, weight='bold')
+
+    ax.set_xlabel('Key', fontsize=12)
+    ax.set_ylabel('Log-Likelihood', fontsize=12)
+    ax.set_title(title, fontsize=14)
+    ax.tick_params(axis='both', which='major', labelsize=10)
+    fig.tight_layout()
+
+    # Log to TensorBoard
+    writer.add_figure(title, fig, global_step=global_step)
+
+    plt.close(fig)  # prevent memory leaks

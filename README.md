@@ -68,7 +68,10 @@ pip install -r requirements.txt
 
 - Applying window layer at the very beginning does not help in the reference in any way. It seems that all trace data are necessary for the attack.
 
+- Observing test set key-wise log probability distribution, we find that the probability of different key are really close to each other. This suggest that our model is too weak to make meaning predictions.
+
 ## Log
+- 8/7 Add test set key-wise log probability distribution evaluation.
 - 8/7 Add window layer.
 - 8/7 Add key-wise log-likelihood distribution evaluation.
 - 8/7 We realized that we should evaluate with `nb_attacks=100`. The `M8` model obtains `96K` score this time.

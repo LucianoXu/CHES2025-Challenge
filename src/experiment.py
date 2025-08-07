@@ -159,7 +159,7 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     correct_key = dataset_test.K[0]
 
     print("Evaluation GE/NTGE score ...")
-    GE, NTGE = evaluate_optimized(
+    GE, NTGE, test_key_log_prob = evaluate_optimized(
         device, 
         model, 
         dataset_test.X, 
@@ -169,6 +169,14 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         nb_attacks=config['num_attacks'], 
         total_nb_traces_attacks=100_000, 
         attack_trace_usage=100_000,)
+    # record the test key log likelihood distribution
+    key_wise_log_likelihood_plot(
+        "Test Key-wise Log-Likelihood Distribution",
+        test_key_log_prob,
+        writer,
+        highlight_indices=[correct_key],
+        global_step=config["test_size"]-1
+    )
     
     # write GE (1D numpy array) to tensorboard writer
     for i, val in enumerate(GE):
@@ -186,8 +194,18 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
     # calculate key-wise log-likelihood distribution and write to tensorboard
     print("Calculating Key-wise  Log-Likelihood Distribution ...")
-    key_log_prob = key_wise_log_likelihood(model, datasets['val'].X, datasets['val'].Y, datasets['val'].K, device=device)
-    key_wise_log_likelihood_plot(key_log_prob, writer)
+    val_key_log_prob = key_wise_log_likelihood(
+        model, 
+        datasets['val'].X, 
+        datasets['val'].Y, 
+        datasets['val'].K, 
+        device=device
+    )
+    key_wise_log_likelihood_plot(
+        "Validation Key-wise Log-Likelihood Distribution", 
+        val_key_log_prob, 
+        writer
+    )
     print("Results saved to tensorboard.")
 
     print("Done.")
