@@ -66,7 +66,10 @@ pip install -r requirements.txt
 
 - Added key-wise log-likelihood distribution evaluation. No bias discovered, which does not explain the inconsistency between validation accuracy and the test score.
 
+- Applying window layer at the very beginning does not help in the reference in any way. It seems that all trace data are necessary for the attack.
+
 ## Log
+- 8/7 Add window layer.
 - 8/7 Add key-wise log-likelihood distribution evaluation.
 - 8/7 We realized that we should evaluate with `nb_attacks=100`. The `M8` model obtains `96K` score this time.
 - 8/7 Add hyperparameter searching random training.

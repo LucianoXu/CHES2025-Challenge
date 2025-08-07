@@ -16,7 +16,7 @@ from .dataloader import load_data, SCA_Dataset
 from .utils import evaluate_optimized, key_wise_log_likelihood, key_wise_log_likelihood_plot
 from .config import Config
 
-from .net import MLP, CNN
+from .model import MLP, WindowedMLP, CNN
 
 def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[nn.Module, float]:
     '''
@@ -38,7 +38,9 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     # Build the model
     model_args = config["model_args"]
     if model_type == "mlp":
-        model = MLP(model_args, model_args["input_dim"], model_args["output_dim"]).to(device)
+        model = MLP(model_args).to(device)
+    elif model_type == "window_mlp":
+        model = WindowedMLP(model_args).to(device)
     elif model_type == "cnn":
         model = CNN(model_args, model_args["input_dim"], model_args["output_dim"]).to(device)
 

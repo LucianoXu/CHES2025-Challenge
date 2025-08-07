@@ -1,21 +1,44 @@
 import math
 import random
-
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class TimestepWindow(nn.Module):
+    '''
+    The module that cuts the input tensor along the first dimension, according to the start indices and the window size.
+    '''
+    def __init__(self, model_args: dict):
+        super(TimestepWindow, self).__init__()
+        self.start_indices = model_args["start_indices"]
+        self.window_size = model_args["window_size"]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        '''
+        Args:
+            x: input tensor, shape (N, T, C) or (N, T)
+        Returns:
+            cut tensor, shape (N, window_size, C) or (N, window_size)
+        '''
+        if len(x.shape) == 3:
+            return x[:, self.start_indices:self.start_indices + self.window_size, :]
+        else:
+            return x[:, self.start_indices:self.start_indices + self.window_size]
+
 class MLP(nn.Module):
-    def __init__(self, search_space, num_sample_pts, classes):
+    def __init__(self, model_args: dict):
         super(MLP, self).__init__()
-        self.num_layers = search_space["layers"]
-        self.hidden_dim = search_space["hidden_dim"]
-        self.activation = search_space["activation"]
+        self.num_layers = model_args["layers"]
+        self.input_dim = model_args["input_dim"]
+        self.hidden_dim = model_args["hidden_dim"]
+        self.output_dim = model_args["output_dim"]
+        self.activation = model_args["activation"]
 
         self.layers = nn.ModuleList()
 
         for layer_index in range(0, self.num_layers):
             if layer_index == 0:
-                self.layers.append(nn.Linear(num_sample_pts, self.hidden_dim))
+                self.layers.append(nn.Linear(self.input_dim, self.hidden_dim))
             else:
                 self.layers.append(nn.Linear(self.hidden_dim, self.hidden_dim))
 
@@ -27,7 +50,8 @@ class MLP(nn.Module):
                 self.layers.append(nn.Tanh())
             elif self.activation == 'elu':
                 self.layers.append(nn.ELU())
-        self.softmax_layer = nn.Linear(self.hidden_dim, classes)
+
+        self.last_layer = nn.Linear(self.hidden_dim, self.output_dim)
 
     def number_of_parameters(self):
         return (sum(p.numel() for p in self.parameters() if p.requires_grad))
@@ -36,9 +60,25 @@ class MLP(nn.Module):
         x = x.transpose(1, 2)  # (N, T, 1) -> (N, 1, T)
         for layer in self.layers:
             x = layer(x)
-        x = self.softmax_layer(x) #F.softmax()
+        x = self.last_layer(x) #F.softmax()
         x = x.squeeze(1)
         return x
+    
+class WindowedMLP(nn.Module):
+    def __init__(self, model_args: dict):
+        super(WindowedMLP, self).__init__()
+        self.window = TimestepWindow(model_args)
+        self.mlp = MLP(model_args)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        '''
+        Args:
+            x: input tensor, shape (N, T, C) or (N, T)
+        Returns:
+            output tensor, shape (N, output_dim)
+        '''
+        x = self.window(x)
+        return self.mlp(x)
 
 
 
