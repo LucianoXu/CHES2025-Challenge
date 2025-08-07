@@ -64,7 +64,11 @@ pip install -r requirements.txt
 
 - Data augumentation indeed helps reduce overfitting, but later training still cannot improve the performance. The non-arguemented version is still better.
 
+- Added key-wise log-likelihood distribution evaluation. No bias discovered, which does not explain the inconsistency between validation accuracy and the test score.
+
 ## Log
+- 8/7 Add key-wise log-likelihood distribution evaluation.
+- 8/7 We realized that we should evaluate with `nb_attacks=100`. The `M8` model obtains `96K` score this time.
 - 8/7 Add hyperparameter searching random training.
 - 8/6 Add data augmentation by Gaussian noise and random shift
 - **8/6 We obtained an excellent model `M8`, which achieves 10K score by a 4-layer MLP.**

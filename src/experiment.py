@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from .dataloader import load_data, SCA_Dataset
-from .utils import evaluate_optimized
+from .utils import evaluate_optimized, key_wise_log_likelihood, key_wise_log_likelihood_plot
 from .config import Config
 
 from .net import MLP, CNN
@@ -174,11 +174,20 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
     # calculate the score
     if NTGE == float('inf'):
-        score = 200_000
+        score = 200_000 + round((GE[-1].item()))
     else:
         score = NTGE
 
     writer.add_scalar(f"Score", score, global_step=0)
+    print("Score: ", score)
+    print("Results saved to tensorboard.")
+
+    # calculate key-wise log-likelihood distribution and write to tensorboard
+    print("Calculating Key-wise  Log-Likelihood Distribution ...")
+    key_log_prob = key_wise_log_likelihood(model, datasets['val'].X, datasets['val'].Y, datasets['val'].K, device=device)
+    key_wise_log_likelihood_plot(key_log_prob, writer)
+    print("Results saved to tensorboard.")
+
     print("Done.")
 
     return model, score

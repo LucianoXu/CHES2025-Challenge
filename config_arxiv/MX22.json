@@ -1,8 +1,8 @@
 {
     "output_dir": "./Results",
     "codename": "MX",
-    "expr_num": 29,
-    "comment": "Data augmentation enabled.",
+    "expr_num": 22,
+    "comment": "Evaluation with even more rounds of attacks.",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
     "train_size": 480000,
@@ -10,9 +10,9 @@
     "test_size": 100000,
     "leakage": "ID",
 
-    "data_augmentation": true,
-    "aug_gaussian_noise": 0.02,
-    "aug_random_shift": 5,
+    "data_augmentation": false,
+    "aug_gaussian_noise": 0.01,
+    "aug_random_shift": 3,
 
     "model": "mlp",
     "model_args": {
@@ -30,5 +30,5 @@
     "batch_size": 1000,
     "num_epochs": 3,
 
-    "num_attacks": 1
+    "num_attacks": 100
 }

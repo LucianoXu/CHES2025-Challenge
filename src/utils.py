@@ -8,6 +8,7 @@ from sklearn.metrics import accuracy_score
 from tqdm import tqdm
 import torch
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 
 from numba import njit
 
@@ -403,3 +404,67 @@ def evaluate_optimized(device, model, X_attack, plt_attack, correct_key, leakage
     print("GE", GE)
     print("NTGE", NTGE)
     return GE, NTGE
+
+
+@njit
+def __key_log_prob_calc(log_likelihood: np.ndarray, Y: np.ndarray, K: np.ndarray) -> np.ndarray:
+    """
+    njit optimized function to calculate key-wise log likelihood.
+    """
+    # categorize predictions based on key bytes
+    key_log_prob = np.zeros((256,), dtype=np.float64)
+    key_count = np.zeros((256,), dtype=np.int32)
+    for i in range(len(K)):
+        key_byte = K[i]
+        key_log_prob[key_byte] += log_likelihood[i, Y[i]]
+        key_count[key_byte] += 1
+
+    # average log likelihood for each key byte
+    for k in range(256):
+        if key_count[k] > 0:
+            key_log_prob[k] /= key_count[k]
+        else:
+            key_log_prob[k] = -np.inf
+
+    return key_log_prob
+
+
+def key_wise_log_likelihood(model: torch.nn.Module, X: np.ndarray, Y: np.ndarray, K: np.ndarray, device) -> np.ndarray:
+    """
+    Calculate key-wise log likelihood for each key byte.
+    
+    :param model: trained model
+    :param X: input traces, np.ndarray of shape (N, T, 1)
+    :param Y: true labels (leakage to be predicted), np.ndarray of shape (N,)
+    :param K: true keys, np.ndarray of shape (N,)
+    :return: log probabilities for each key byte, np.ndarray of shape (256,)
+    """
+    model.eval()
+    with torch.no_grad():
+        X_tensor = torch.from_numpy(X).to(device).float()
+        predictions_wo_softmax = model(X_tensor)
+        predictions = F.softmax(predictions_wo_softmax, dim=1)
+        log_likelihood = torch.log(predictions + 1e-40).cpu().detach().numpy()
+
+    # categorize predictions based on key bytes
+    return __key_log_prob_calc(log_likelihood, Y, K)
+
+def key_wise_log_likelihood_plot(key_log_prob: np.ndarray, writer: SummaryWriter):
+    """
+    Plot key-wise log likelihood using TensorBoard.
+    
+    :param key_log_prob: log probabilities for each key byte, np.ndarray of shape (256,)
+    :param writer: TensorBoard SummaryWriter
+    """
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(12, 6), dpi=150)
+    plt.bar(range(len(key_log_prob)), key_log_prob)
+    plt.xlabel('Key', fontsize=12)
+    plt.ylabel('Log-Likelihood', fontsize=12)
+    plt.title('Key-wise Log-Likelihood Distribution', fontsize=14)
+    plt.tick_params(axis='both', which='major', labelsize=10)
+    plt.tight_layout()
+    # save the plot in the tensorboard writer
+    writer.add_figure('Key-wise Log-Likelihood Distribution', plt.gcf(), global_step=0)
+
+
