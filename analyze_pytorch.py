@@ -59,19 +59,14 @@ if __name__=="__main__":
     num_sample_pts = X_attack.shape[-1]
 
 
-    ##TODO: Load your model (note, you have to create your model in this file and new function should be in this file.) ########################
+    ## Load your model (note, you have to create your model in this file and new function should be in this file.) ########################
     ############## Below is an example ############################################
-    model_type = "mlp"
-    root = "./Result/"
-    save_root = root + dataset + "_" + model_type + "_" + leakage + "/"
-    model_root = save_root + "models/"
-    config = np.load(model_root + "model_configuration_0.npy", allow_pickle=True).item()
-    model = MLP(config, num_sample_pts, classes).to(device)
-    model.load_state_dict(torch.load(model_root + "model_0.pth"))
+    model = torch.load('./model.pth', weights_only=False)
+    model.eval()
     ###############################################################################
 
 
     ####All model will be evaluated based on this function, if it does not adhere to the following, it will be eliminated. ##################
     GE, NTGE = evaluate(device, model, X_attack, plt_attack, correct_key, leakage_fn=leakage_fn, nb_attacks=100,
-                        total_nb_traces_attacks=2000, nb_traces_attacks=1700)
+                        total_nb_traces_attacks=100000, nb_traces_attacks=100000)
 

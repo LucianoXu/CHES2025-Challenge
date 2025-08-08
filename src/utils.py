@@ -231,7 +231,7 @@ def NTGE_fn(GE):
 
 
 def evaluate(device, model, X_attack, plt_attack,correct_key,leakage_fn, nb_attacks=100, total_nb_traces_attacks=2000, nb_traces_attacks = 1700):
-    attack_traces = torch.from_numpy(X_attack[:total_nb_traces_attacks]).to(device).unsqueeze(1).float()
+    attack_traces = torch.from_numpy(X_attack[:total_nb_traces_attacks]).to(device).float()
     predictions_wo_softmax = model(attack_traces)
     predictions = F.softmax(predictions_wo_softmax, dim=1)
     predictions = predictions.cpu().detach().numpy()

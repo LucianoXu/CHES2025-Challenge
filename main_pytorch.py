@@ -17,7 +17,7 @@ from src.utils import evaluate, AES_Sbox, calculate_HW
 if __name__=="__main__":
     dataset = "CHES_2025"
     model_type = "mlp" #mlp, cnn
-    leakage = "HW" #ID, HW
+    leakage = "ID" #ID, HW
     train_models = True
     num_epochs = 50
     total_num_models = 2

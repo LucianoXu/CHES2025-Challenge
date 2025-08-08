@@ -15,7 +15,7 @@ class Custom_Dataset(Dataset):
             (self.X_profiling, self.X_attack), (self.Y_profiling, self.Y_attack), (
                 self.plt_profiling, self.plt_attack), self.correct_key = load_ctf_2025(
                 root + data_root, leakage_model=leakage, byte=byte, train_begin=0, train_end=45000, test_begin=0,
-                test_end=10000)
+                test_end=100000)
 
         print("The dataset we using: ", data_root)
         self.transform = transform
