@@ -72,7 +72,13 @@ pip install -r requirements.txt
 
 - With log probability analysis we found that the log prob for test is much smaller than that of validation. This explains why validation performance is not corelated to that of the test data set.
 
+- We discovered a structural difference between train data and test data, which is 5 times larger than the difference between the average of different keys. This explains the difference of validation and test key-wise log-likelihood. This difference should attribute to data drift.
+This fact causes the consequence that we cannot standardize the test data using scalar trained on training data set. 
+
+- We applied a special standardization to fix the data drift. The performance improved a little.
+
 ## Log
+- 8/8 Fix data drift using special standardization.
 - 8/7 Add test set key-wise log probability distribution evaluation.
 - 8/7 Add window layer.
 - 8/7 Add key-wise log-likelihood distribution evaluation.

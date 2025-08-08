@@ -83,17 +83,19 @@ class WindowedMLP(nn.Module):
 
 
 class CNN(nn.Module):
-    def __init__(self, search_space,num_sample_pts, classes):
+    def __init__(self, model_args, num_sample_pts, classes):
         super(CNN, self).__init__()
-        self.num_layers = search_space["layers"]
-        self.neurons = search_space["neurons"]
-        self.activation = search_space["activation"]
-        self.conv_layers = search_space["conv_layers"]
+        self.num_layers = model_args["layers"]
+        self.neurons = model_args["neurons"]
+        self.activation = model_args["activation"]
+        self.conv_layers = model_args["conv_layers"]
 
         self.layers = nn.ModuleList()
         #CNN
-        self.kernels, self.strides, self.filters, self.pooling_type, self.pooling_sizes, self.pooling_strides, self.paddings = create_cnn_hp(search_space)
+        self.kernels, self.strides, self.filters, self.pooling_type, self.pooling_sizes, self.pooling_strides, self.paddings = create_cnn_hp(model_args)
+
         num_features = num_sample_pts
+        
         for layer_index in range(0, self.conv_layers):
             #Convolution layer
             new_out_channels = self.filters[layer_index]

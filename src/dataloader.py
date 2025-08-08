@@ -4,6 +4,7 @@ from torch.utils.data import Dataset
 from src.utils import calculate_HW_single, load_ctf_2025
 import torch
 from .config import Config
+import pickle
 
 def standardize(X_train: np.ndarray, X_test: np.ndarray, device: str = 'cuda'):
     """
@@ -35,7 +36,48 @@ def standardize(X_train: np.ndarray, X_test: np.ndarray, device: str = 'cuda'):
     # Convert back to numpy arrays on CPU
     return X_train_normalized.cpu().numpy(), X_test_normalized.cpu().numpy()
 
-def load_data(config: Config, device: str = 'cuda'):
+def standardize_by_matrixfile(X_train: np.ndarray, X_test: np.ndarray, standardization_file_name: str = "standardization_matrices.pkl", device: str = 'cuda'):
+    """
+    Standardize the data using pre-computed mean and std matrices from a file, and fix data drift of the test set.
+
+    Args:
+        X_train: Training data to fit the scaler on, shape (N, T, 1) or (N, T)
+        X_test: Test data to transform, shape (N, T, 1) or (N, T)
+        standardization_file_name: Path to the file containing mean and std matrices
+        device: Device to use for computation ('cuda' or 'cpu')
+    
+    Returns:
+        Tuple of (standardized_X_train, standardized_X_test) as numpy arrays
+    """
+    # use magic standardization to fix data drift of the test set
+    with open(standardization_file_name, 'rb') as f:
+        std_m = pickle.load(f)
+
+    mean_profiling = torch.from_numpy(std_m['mean_profiling']).float().to(device)
+    std_profiling = torch.from_numpy(std_m['std_profiling']).float().to(device)
+    mean_attack = torch.from_numpy(std_m['mean_attack']).float().to(device)
+    std_attack = torch.from_numpy(std_m['std_attack']).float().to(device)
+    mean_profiling_raw_key_127 = torch.from_numpy(std_m['mean_profiling_raw_key_127']).float().to(device)
+    std_profiling_raw_key_127 = torch.from_numpy(std_m['std_profiling_raw_key_127']).float().to(device)
+
+    # Convert to PyTorch tensors and move to GPU
+    X_train_tensor = torch.from_numpy(X_train).float().to(device)
+    X_test_tensor = torch.from_numpy(X_test).float().to(device)
+
+    # this step transform the drifted test set to the same distribution as the profiling set
+    # it seems that only fixing the mean is enough
+    X_test_tensor = (X_test_tensor - mean_attack) + mean_profiling_raw_key_127
+    # X_test_tensor = (X_test_tensor - mean_attack) * (std_profiling_raw_key_127 / std_attack) + mean_profiling_raw_key_127
+
+
+    # standardize the data
+    X_test_normalized = (X_test_tensor - mean_profiling) / std_profiling
+    X_train_normalized = (X_train_tensor - mean_profiling) / std_profiling
+
+    # Convert back to numpy arrays on CPU
+    return X_train_normalized.cpu().numpy(), X_test_normalized.cpu().numpy()
+
+def load_data(config: Config, device: str = 'cuda', standardization_file_name: str = "standardization_matrices.pkl"):
     '''
     Load the data from the dataset specified in the configuration.
 
@@ -62,8 +104,15 @@ def load_data(config: Config, device: str = 'cuda'):
         train_begin=0, train_end=train_size + val_size, 
         test_begin=0, test_end=test_size)
 
-    # normalization
-    X_profiling, X_attack = standardize(X_profiling, X_attack, device)
+    # standardize the data according to the matrix file (fix data drift)
+    X_profiling, X_attack = standardize_by_matrixfile(
+        X_profiling, X_attack,
+        standardization_file_name=standardization_file_name,
+        device=device
+    )
+    
+    # standardize the data according to profiling set
+    # X_profiling, X_attack = standardize(X_profiling, X_attack, device=device)
 
     # split train into train and validation
     X_train = np.expand_dims(X_profiling[:train_size], -1)
