@@ -79,7 +79,10 @@ This fact causes the consequence that we cannot standardize the test data using 
 
 - We applied denosing techniques. The performance increased.
 
+- We observed that test key log-likelihood is increased when using CNN.
+
 ## Log
+- 8/9 Add CNN model.
 - 8/9 Add denoising by notch frequency in the spectrogram.
 - 8/8 Fix data drift using special standardization.
 - 8/7 Add test set key-wise log probability distribution evaluation.

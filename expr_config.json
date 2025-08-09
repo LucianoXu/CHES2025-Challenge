@@ -1,8 +1,8 @@
 {
     "output_dir": "./Results",
-    "codename": "MFD",
-    "expr_num": 49,
-    "comment": "Denoising.",
+    "codename": "MXC",
+    "expr_num": 58,
+    "comment": "CNN.",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
     "train_size": 480000,
@@ -24,13 +24,26 @@
     "aug_gaussian_noise": 0.02,
     "aug_random_shift": 0,
 
-    "model": "mlp",
+    "model": "cnn",
     "model_args": {
-        "input_dim": 7000,
+        "input_size": 7000,
+        "input_dim": 1,
+        "output_size": 50,
         "output_dim": 256,
-        "layers": 4,
-        "hidden_dim": 300,
-        "activation": "relu"
+        "kernel_sizes": [15, 7, 5, 4, 3, 3],
+        "layer_strides": [3, 2, 1, 1, 1, 1],
+        "padding": 2,
+
+        "pooling_type": "average_pool",
+        "activation": "relu",
+        "mlp_head": true,
+        "mlp_head_args": {
+            "input_dim": 256,
+            "output_dim": 256,
+            "layers": 2,
+            "hidden_dim": 400,
+            "activation": "relu"
+        }
     },
 
     "optimizer": "Adam",
@@ -38,7 +51,7 @@
 
     "lr": 0.0001,
     "batch_size": 1000,
-    "num_epochs": 3,
+    "num_epochs": 5,
 
     "num_attacks": 50
 }

@@ -310,6 +310,8 @@ def load_data(config: Config, device: str = 'cuda'):
     P_test = P_attack
     K_test = K_attack
 
+    torch.cuda.empty_cache()  # clear GPU memory
+
     return (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_test, Y_test, P_test, K_test)
 
 def data_augmentation(config: Config, X: np.ndarray, device: str) -> np.ndarray:

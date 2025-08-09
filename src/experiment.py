@@ -16,7 +16,7 @@ from .dataloader import load_data, SCA_Dataset
 from .utils import evaluate_optimized, key_wise_log_likelihood, key_wise_log_likelihood_plot
 from .config import Config
 
-from .model import MLP, WindowedMLP, CNN
+from .model import MLP, WindowedMLP, GatedMLP, CNN
 
 def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[nn.Module, float]:
     '''
@@ -31,9 +31,8 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     num_epochs = config["num_epochs"]
     dataset_sizes = {'train': config['train_size'], 'val': config['val_size']}
 
-    # create the tensorboard writer and record the training setting
+    # create the tensorboard writer
     writer = SummaryWriter(log_dir=config.output_folder)
-    writer.add_text("config", config.get_json())
 
     # Build the model
     model_args = config["model_args"]
@@ -41,8 +40,22 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         model = MLP(model_args).to(device)
     elif model_type == "window_mlp":
         model = WindowedMLP(model_args).to(device)
+    elif model_type == "gated_mlp":
+        model = GatedMLP(model_args).to(device)
     elif model_type == "cnn":
-        model = CNN(model_args, model_args["input_dim"], model_args["output_dim"]).to(device)
+        model = CNN(model_args).to(device)
+        print("===Completed CNN model Hyperparameters===")
+        print(model.model_args)
+        print()
+
+    # record the model size
+    model_size = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Model size: {model_size} parameters")
+
+    # record the training setting
+    training_record = "Model Size: {} parameters\n\n".format(model_size)
+    training_record += config.get_json()
+    writer.add_text("config", training_record)
 
     # Creates the optimizer
     lr = config["lr"]
@@ -152,6 +165,9 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
     ############################################
     # Evaluation Phase
+
+    if hasattr(model, 'free_cache'):
+        model.free_cache = True # type: ignore[assignment]
 
     # evaluate GE and NTGE
 
