@@ -1,10 +1,180 @@
-from typing import Callable, Literal
+from typing import Callable, Literal, Iterable, Optional, Tuple, Union
 import numpy as np
 from torch.utils.data import Dataset
 from src.utils import calculate_HW_single, load_ctf_2025
 import torch
 from .config import Config
 import pickle
+
+# denoising function
+def notch_many_fft(
+    x: Union[torch.Tensor, "np.ndarray"],
+    fs: float,
+    freqs: Iterable[float],
+    Q: float = 40.0,                 # Q ≈ f0 / (-3 dB bandwidth)
+    taper_ratio: float = 0.5,        # 0..1, fraction of half-band used for cosine skirts
+    atten_db: float = 60.0,          # depth of the notch (in dB)
+    mix: float = 1.0,                # 1.0 = full notch, <1.0 = wet/dry mix
+    device: Optional[torch.device] = None
+) -> torch.Tensor:
+    """
+    Narrow-band noise removal using smooth frequency-domain notches.
+
+    Args:
+        x: 1D (T,) or 2D (N, T) real signal. torch tensor or numpy array.
+        fs: Sample rate in Hz.
+        freqs: Iterable of center frequencies to notch (Hz).
+        Q: Quality factor; -3 dB bandwidth BW ≈ f0 / Q. Larger Q => narrower notch.
+        taper_ratio: Cosine taper fraction of the half-band. 0 = brick-wall, 0.5 = pure cosine.
+        atten_db: Notch depth in dB (amplitude domain). 60 dB means ~1e-3 gain at center.
+        mix: Wet/dry mix. y = mix * filtered + (1-mix) * original.
+        device: Torch device. If None, inferred from x or defaults to CPU.
+
+    Returns:
+        y : filtered signal with same shape/type as input.
+    """
+    # --- Normalize input to torch tensor (float32) and batch shape (B, T) ---
+    is_numpy = False
+    try:
+        import numpy as _np
+        if not torch.is_tensor(x):
+            is_numpy = True
+            x = torch.from_numpy(_np.asarray(x))
+    except Exception:
+        pass
+
+    if device is None:
+        device = x.device if torch.is_tensor(x) else torch.device("cpu")
+
+    assert isinstance(x, torch.Tensor)
+    
+    x = x.to(device).float()
+    if x.ndim == 1:
+        x = x[None, :]  # (1, T)
+
+    B, T = x.shape
+    n_r = T // 2 + 1
+
+    # --- rFFT and frequency bins ---
+    X = torch.fft.rfft(x, dim=-1)  # (B, n_r)
+    # rFFT bin frequencies: f_k = k * fs / T
+    f_bins = torch.arange(n_r, device=device, dtype=x.dtype) * (fs / T)
+
+    # --- Build smooth multiplicative mask: start from ones (pass-through) ---
+    mask = torch.ones(n_r, device=device, dtype=x.dtype)
+
+    # Precompute center attenuation (amplitude gain)
+    att = 10.0 ** (-atten_db / 20.0)
+
+    for f0 in freqs:
+        # Skip invalid or out-of-band centers
+        if not (0.0 < f0 < fs * 0.5):
+            continue
+
+        # Half-bandwidth by Q: H = BW/2 ≈ f0 / (2Q)
+        H = float(f0) / (2.0 * float(Q))
+        if H <= 0:
+            continue
+
+        # Split half-band into a flat "core" and cosine "skirts"
+        taper = max(taper_ratio * H, 0.0)
+        core  = max(H - taper, 0.0)
+
+        # Distance from the center frequency
+        delta = (f_bins - f0).abs()
+
+        if taper > 0:
+            # Smooth gain profile:
+            #   delta <= core: gain = att
+            #   core < delta < core+taper: cosine ramp from att -> 1
+            #   delta >= core+taper: gain = 1
+            t = ((delta - core) / taper).clamp(0.0, 1.0)          # 0..1
+            r = 0.5 - 0.5 * torch.cos(torch.pi * t)               # 0..1 (cosine ease)
+            gain = att + (1.0 - att) * r                          # att..1
+        else:
+            # Brick-wall notch within |delta| <= H
+            gain = torch.where(delta <= H, torch.tensor(att, device=device, dtype=x.dtype),
+                                           torch.tensor(1.0, device=device, dtype=x.dtype))
+
+        mask = mask * gain  # combine multiple notches multiplicatively
+
+    # --- Apply mask and inverse rFFT ---
+    Xf = X * mask[None, :]
+    y = torch.fft.irfft(Xf, n=T, dim=-1)
+
+    # Wet/dry mix
+    if mix != 1.0:
+        y = mix * y + (1.0 - mix) * x
+
+    # Restore original shape/type
+    y = y.squeeze(0) if B == 1 else y
+    if is_numpy:
+        y = y.cpu().numpy()
+
+    return y
+
+
+def chunked_notch_many_fft(
+    x: np.ndarray,
+    fs: float,
+    notch_freqs: Iterable[float],
+    Q: float = 40.0,
+    taper_ratio: float = 0.5,
+    atten_db: float = 60.0,
+    mix: float = 1.0,
+    device: Optional[torch.device] = None,
+    chunk_size: int = 100_000
+) -> np.ndarray:
+    """Chunked version of notch_many_fft for large inputs."""
+    # Split input into chunks to avoid memory issues
+    num_chunks = (x.shape[-1] + chunk_size - 1) // chunk_size
+
+    y_chunks = []
+    for i in range(num_chunks):
+        start = i * chunk_size
+        end = min((i + 1) * chunk_size, x.shape[-1])
+        y_chunk = notch_many_fft(x[..., start:end], fs, notch_freqs, Q, taper_ratio, atten_db, mix, device)
+        y_chunks.append(y_chunk)
+
+    if len(y_chunks) == 1:
+        return y_chunks[0]
+    else:
+        return torch.cat(y_chunks, dim=-1).cpu().numpy()
+    
+def calculating_data_drift_fixing_matrices(X_profiling: np.ndarray, X_attack: np.ndarray, K_profiling: np.ndarray):
+    '''
+    Calculate the matrices that will be used to fix the data drift of the test set.
+    '''
+    X_profiling_tensor = torch.from_numpy(X_profiling).float().to('cuda')
+    X_attack_tensor = torch.from_numpy(X_attack).float().to('cuda')
+
+    mean_profiling = X_profiling_tensor.mean(dim=0, keepdim=False).cpu().numpy()
+    std_profiling = X_profiling_tensor.std(dim=0, keepdim=False, unbiased=False).cpu().numpy()
+
+    mean_attack = X_attack_tensor.mean(dim=0, keepdim=False).cpu().numpy()
+    std_attack = X_attack_tensor.std(dim=0, keepdim=False, unbiased=False).cpu().numpy()
+
+    # collect all traces with key 127 from profiling data
+    X_profiling_raw_key_127 = []
+    for i in range(len(X_profiling)):
+        if K_profiling[i] == 127:
+            X_profiling_raw_key_127.append(X_profiling[i])
+
+    X_profiling_raw_key_127 = np.array(X_profiling_raw_key_127)
+
+    mean_profiling_raw_key_127 = X_profiling_raw_key_127.mean(axis=0)
+    std_profiling_raw_key_127 = X_profiling_raw_key_127.std(axis=0, ddof=0)
+
+    matrices = {
+        'mean_profiling': mean_profiling,
+        'std_profiling': std_profiling,
+        'mean_attack': mean_attack,
+        'std_attack': std_attack,
+        'mean_profiling_raw_key_127': mean_profiling_raw_key_127,
+        'std_profiling_raw_key_127': std_profiling_raw_key_127
+    }
+
+    return matrices
 
 def standardize(X_train: np.ndarray, X_test: np.ndarray, device: str = 'cuda'):
     """
@@ -36,22 +206,19 @@ def standardize(X_train: np.ndarray, X_test: np.ndarray, device: str = 'cuda'):
     # Convert back to numpy arrays on CPU
     return X_train_normalized.cpu().numpy(), X_test_normalized.cpu().numpy()
 
-def standardize_by_matrixfile(X_train: np.ndarray, X_test: np.ndarray, standardization_file_name: str = "standardization_matrices.pkl", device: str = 'cuda'):
+def standardize_by_matrixfile(X_train: np.ndarray, X_test: np.ndarray, std_m: dict[str, np.ndarray], device: str = 'cuda'):
     """
     Standardize the data using pre-computed mean and std matrices from a file, and fix data drift of the test set.
 
     Args:
         X_train: Training data to fit the scaler on, shape (N, T, 1) or (N, T)
         X_test: Test data to transform, shape (N, T, 1) or (N, T)
-        standardization_file_name: Path to the file containing mean and std matrices
+        std_m: Dictionary containing pre-computed mean and std matrices
         device: Device to use for computation ('cuda' or 'cpu')
     
     Returns:
         Tuple of (standardized_X_train, standardized_X_test) as numpy arrays
     """
-    # use magic standardization to fix data drift of the test set
-    with open(standardization_file_name, 'rb') as f:
-        std_m = pickle.load(f)
 
     mean_profiling = torch.from_numpy(std_m['mean_profiling']).float().to(device)
     std_profiling = torch.from_numpy(std_m['std_profiling']).float().to(device)
@@ -77,7 +244,7 @@ def standardize_by_matrixfile(X_train: np.ndarray, X_test: np.ndarray, standardi
     # Convert back to numpy arrays on CPU
     return X_train_normalized.cpu().numpy(), X_test_normalized.cpu().numpy()
 
-def load_data(config: Config, device: str = 'cuda', standardization_file_name: str = "standardization_matrices.pkl"):
+def load_data(config: Config, device: str = 'cuda'):
     '''
     Load the data from the dataset specified in the configuration.
 
@@ -103,16 +270,29 @@ def load_data(config: Config, device: str = 'cuda', standardization_file_name: s
         byte=0, 
         train_begin=0, train_end=train_size + val_size, 
         test_begin=0, test_end=test_size)
+    
+    # denoising (the arguments are hardcoded)
+    if config["denoising"]:
+        print("Denoising traces ...")
+
+        X_profiling = chunked_notch_many_fft(X_profiling, **config["denoising_args"], device=torch.device('cuda'))
+        X_attack = chunked_notch_many_fft(X_attack, **config["denoising_args"], device=torch.device('cuda'))
+
 
     # standardize the data according to the matrix file (fix data drift)
-    X_profiling, X_attack = standardize_by_matrixfile(
-        X_profiling, X_attack,
-        standardization_file_name=standardization_file_name,
-        device=device
-    )
-    
-    # standardize the data according to profiling set
-    # X_profiling, X_attack = standardize(X_profiling, X_attack, device=device)
+    print("Standardizing traces ...")
+    if config["fixing_data_drift"]:
+        # calculate the standardization matrices
+        std_m = calculating_data_drift_fixing_matrices(X_profiling, X_attack, K_profiling)
+        # apply the standardization matrices
+        X_profiling, X_attack = standardize_by_matrixfile(
+            X_profiling, X_attack,
+            std_m=std_m,
+            device=device
+        )
+    else:    
+        # standardize the data according to profiling set
+        X_profiling, X_attack = standardize(X_profiling, X_attack, device=device)
 
     # split train into train and validation
     X_train = np.expand_dims(X_profiling[:train_size], -1)

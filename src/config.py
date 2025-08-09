@@ -18,6 +18,18 @@ def create_config_template() -> dict:
 
         "leakage": "ID",
 
+        # whether to denoise the traces
+        "denoising": True,
+        "denoising_args": {
+            "fs": 1000,
+            "notch_freqs": [10, 20, 25, 30, 40, 43.15, 60, 80, 125],
+            "Q": 100,
+            "atten_db": 20
+        },
+
+        # whether to fix data drift
+        "fixing_data_drift": True,
+
         # data augmentation parameters
         "data_augmentation": True,  # whether to use data augmentation
         "aug_gaussian_noise": 0.1, # standard deviation of the Gaussian noise

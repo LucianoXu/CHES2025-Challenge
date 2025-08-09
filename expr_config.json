@@ -1,14 +1,24 @@
 {
     "output_dir": "./Results",
-    "codename": "MF",
-    "expr_num": 47,
-    "comment": "Only mean-shift applied when fixing data drift.",
+    "codename": "MFD",
+    "expr_num": 49,
+    "comment": "Denoising.",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
     "train_size": 480000,
     "val_size": 20000,
     "test_size": 100000,
     "leakage": "ID",
+
+    "denoising": true,
+    "denoising_args": {
+        "fs": 1000,
+        "notch_freqs": [10, 20, 25, 30, 40, 43.15, 60, 80, 125],
+        "Q": 100,
+        "atten_db": 20
+    },
+
+    "fixing_data_drift": true,
 
     "data_augmentation": false,
     "aug_gaussian_noise": 0.02,

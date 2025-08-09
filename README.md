@@ -77,7 +77,10 @@ This fact causes the consequence that we cannot standardize the test data using 
 
 - We applied a special standardization to fix the data drift. The performance improved a little.
 
+- We applied denosing techniques. The performance increased.
+
 ## Log
+- 8/9 Add denoising by notch frequency in the spectrogram.
 - 8/8 Fix data drift using special standardization.
 - 8/7 Add test set key-wise log probability distribution evaluation.
 - 8/7 Add window layer.
