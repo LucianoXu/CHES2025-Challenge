@@ -16,7 +16,7 @@ from .dataloader import load_data, SCA_Dataset
 from .utils import evaluate_optimized, key_wise_log_likelihood, key_wise_log_likelihood_plot
 from .config import Config
 
-from .model import MLP, WindowedMLP, GatedMLP, CNN
+from .model import MLP, CNN
 
 def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[nn.Module, float]:
     '''
@@ -38,15 +38,13 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     model_args = config["model_args"]
     if model_type == "mlp":
         model = MLP(model_args).to(device)
-    elif model_type == "window_mlp":
-        model = WindowedMLP(model_args).to(device)
-    elif model_type == "gated_mlp":
-        model = GatedMLP(model_args).to(device)
     elif model_type == "cnn":
         model = CNN(model_args).to(device)
         print("===Completed CNN model Hyperparameters===")
         print(model.model_args)
         print()
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
 
     # record the model size
     model_size = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -65,6 +63,8 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
     elif config["optimizer"] == "RMSprop":
         optimizer = torch.optim.RMSprop(model.parameters(), lr=lr)
+    else:
+        raise ValueError(f"Unknown optimizer: {config['optimizer']}")
 
     # This is the trainning Loop
     criterion = nn.CrossEntropyLoss()
@@ -77,6 +77,8 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     early_stop: bool = False
 
     for epoch in range(num_epochs):
+
+        torch.cuda.empty_cache()  # clear GPU memory
 
         desc = ""
 

@@ -28,11 +28,20 @@ class TimestepWindow(nn.Module):
 class MLP(nn.Module):
     def __init__(self, model_args: dict):
         super(MLP, self).__init__()
+        self.model_args = model_args
         self.num_layers = model_args["layers"]
         self.input_dim = model_args["input_dim"]
         self.hidden_dim = model_args["hidden_dim"]
         self.output_dim = model_args["output_dim"]
         self.activation = model_args["activation"]
+
+        # the input window
+        if self.model_args["input_window"]:
+            self.window = TimestepWindow(self.model_args['input_window_args'])
+
+        if self.model_args["gated"]:
+            self.gate = nn.Parameter(torch.ones(self.model_args["input_dim"]))
+
 
         self.layers = nn.ModuleList()
 
@@ -57,45 +66,18 @@ class MLP(nn.Module):
         '''
         Input: (N, T, 1)
         '''
+        if self.model_args["input_window"]:
+            x = self.window(x)
+
+        if self.model_args["gated"]:
+            x = x * self.gate.unsqueeze(-1)
+
         x = x.transpose(1, 2)  # (N, T, 1) -> (N, 1, T)
         for layer in self.layers:
             x = layer(x)
         x = self.last_layer(x) #F.softmax()
         x = x.squeeze(1)
         return x
-    
-class WindowedMLP(nn.Module):
-    def __init__(self, model_args: dict):
-        super(WindowedMLP, self).__init__()
-        self.window = TimestepWindow(model_args)
-        self.mlp = MLP(model_args)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        '''
-        Args:
-            x: input tensor, shape (N, T, C) or (N, T)
-        Returns:
-            output tensor, shape (N, output_dim)
-        '''
-        x = self.window(x)
-        return self.mlp(x)
-
-class GatedMLP(nn.Module):
-    def __init__(self, model_args: dict):
-        super(GatedMLP, self).__init__()
-        self.gate = nn.Parameter(torch.ones(model_args["input_dim"]))
-        self.mlp = MLP(model_args)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        '''
-        Args:
-            x: input tensor, shape (N, T, C) or (N, T)
-        Returns:
-            output tensor, shape (N, output_dim)
-        '''
-        x = x * self.gate.unsqueeze(-1)  # Apply gate to the input
-        return self.mlp(x)
-
 
 
 class CNN(nn.Module):
@@ -176,6 +158,13 @@ class CNN(nn.Module):
         self.activation = self.model_args["activation"]
         self.pooling_type = self.model_args["pooling_type"]
 
+        # the input window
+        if self.model_args["input_window"]:
+            self.window = TimestepWindow(self.model_args['input_window_args'])
+
+        if self.model_args["gated"]:
+            self.gate = nn.Parameter(torch.ones(self.model_args["input_size"]))
+
         self.layers = nn.ModuleList()
         
         for layer_index in range(0, self.num_layers):
@@ -222,6 +211,13 @@ class CNN(nn.Module):
             self.mlp = MLP(self.model_args["mlp_head_args"])
 
     def forward(self, x):
+
+        if self.model_args["input_window"]:
+            x = self.window(x)
+
+        if self.model_args["gated"]:
+            x = x * self.gate.unsqueeze(-1)
+
         x = x.transpose(1, 2)  # (N, T, C) -> (N, C, T)
 
         for layer in self.layers:
