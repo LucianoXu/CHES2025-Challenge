@@ -29,9 +29,8 @@ class MLP(nn.Module):
     def __init__(self, model_args: dict):
         super(MLP, self).__init__()
         self.model_args = model_args
-        self.num_layers = model_args["layers"]
         self.input_dim = model_args["input_dim"]
-        self.hidden_dim = model_args["hidden_dim"]
+        self.hidden_dims = model_args["hidden_dims"]
         self.output_dim = model_args["output_dim"]
         self.activation = model_args["activation"]
 
@@ -45,11 +44,11 @@ class MLP(nn.Module):
 
         self.layers = nn.ModuleList()
 
-        for layer_index in range(0, self.num_layers):
+        for layer_index in range(0, len(self.hidden_dims)):
             if layer_index == 0:
-                self.layers.append(nn.Linear(self.input_dim, self.hidden_dim))
+                self.layers.append(nn.Linear(self.input_dim, self.hidden_dims[layer_index]))
             else:
-                self.layers.append(nn.Linear(self.hidden_dim, self.hidden_dim))
+                self.layers.append(nn.Linear(self.hidden_dims[layer_index - 1], self.hidden_dims[layer_index]))
 
             if self.activation == 'relu':
                 self.layers.append(nn.ReLU())
@@ -60,7 +59,10 @@ class MLP(nn.Module):
             elif self.activation == 'elu':
                 self.layers.append(nn.ELU())
 
-        self.last_layer = nn.Linear(self.hidden_dim, self.output_dim)
+        if len(self.hidden_dims) == 0:
+            self.last_layer = nn.Linear(self.input_dim, self.output_dim)
+        else:
+            self.last_layer = nn.Linear(self.hidden_dims[-1], self.output_dim)
 
     def forward(self, x):
         '''
@@ -204,7 +206,12 @@ class CNN(nn.Module):
             self.layers.append(nn.BatchNorm1d(self.model_args["layer_dims"][layer_index + 1]))
 
         # global average pooling
-        self.layers.append(nn.AdaptiveAvgPool1d(1))  # (N, C, T) -> (N, C, 1)
+        if self.model_args["global_pooling_type"] == "average_pool":
+            self.layers.append(nn.AdaptiveAvgPool1d(1))  # (N, C, T) -> (N, C, 1)
+        elif self.model_args["global_pooling_type"] == "max_pool":
+            self.layers.append(nn.AdaptiveMaxPool1d(1))
+        else:
+            raise ValueError("Invalid global pooling type: {}".format(self.model_args["global_pooling_type"]))
             
         #MLP
         if self.model_args["mlp_head"]:

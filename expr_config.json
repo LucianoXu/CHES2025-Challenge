@@ -1,7 +1,7 @@
 {
     "output_dir": "./Results",
     "codename": "X",
-    "expr_num": 18,
+    "expr_num": 33,
     "comment": "",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
@@ -33,9 +33,13 @@
         },
         "gated": false,
         "input_dim": 7000,
+        "hidden_dims": [
+            300,
+            300,
+            300,
+            300
+        ],
         "output_dim": 256,
-        "layers": 4,
-        "hidden_dim": 300,
         "activation": "relu"
     },
 
@@ -44,6 +48,7 @@
 
     "lr": 0.0001,
     "batch_size": 3000,
+    "accumulation_steps": 1,
     "num_epochs": 3,
 
     "num_attacks": 100

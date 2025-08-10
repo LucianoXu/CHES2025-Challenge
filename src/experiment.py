@@ -76,6 +76,10 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     best_model_state = None
     early_stop: bool = False
 
+
+    # if hasattr(model, 'free_cache'):
+    #     model.free_cache = True # type: ignore[assignment]
+
     for epoch in range(num_epochs):
 
         torch.cuda.empty_cache()  # clear GPU memory
@@ -106,13 +110,10 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
             )
 
             # Iterate over all data (one epoch).
-            for (traces, labels) in tk0:
+            for i, (traces, labels) in tqdm(enumerate(tk0), desc=f"Epoch {epoch+1}/{num_epochs} - {phase}", total=len(tk0), leave=False):
                 inputs = traces.to(device)
                 labels = labels.to(device)
                 
-                # zero the parameter gradients
-                optimizer.zero_grad()
-
                 # forward
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
@@ -124,11 +125,19 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
                     if phase == 'train':
                         loss.backward()
-                        optimizer.step()
+                        if (i + 1) % config["accumulation_steps"] == 0:
+                            optimizer.step()
+                            optimizer.zero_grad()
+
 
                 # statistics
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data).item()
+
+                # record batch loss and accuracy
+                if phase == 'train':
+                    writer.add_scalar(f'{phase}/Batch Loss', loss.item(), epoch * len(tk0) + i)
+                    writer.add_scalar(f'{phase}/Batch Accuracy', torch.sum(preds == labels.data).item() / inputs.size(0), epoch * len(tk0) + i)
 
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects / dataset_sizes[phase]
@@ -211,34 +220,73 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     print("Score: ", score)
     print("Results saved to tensorboard.")
 
-    # for validation, calculate key-wise log-likelihood distribution and write to tensorboard
-    print("Val: Calculating Key-wise Log-Likelihood Distribution ...")
-    val_key_log_prob = key_wise_log_likelihood(
+    # use trace from the training set to run another attack
+    rand_key = random.randint(0, 255)
+    print(f"Using random key {rand_key} for attack in validiation set ...")
+    # collect all traces of key rand_key from the training set
+    X_rand_key = []
+    P_rand_key = []
+    for i in range(len(datasets['val'].X)):
+        if datasets['val'].K[i] == rand_key:
+            X_rand_key.append(datasets['val'].X[i])
+            P_rand_key.append(datasets['val'].P[i])
+    X_rand_key = np.array(X_rand_key)
+    P_rand_key = np.array(P_rand_key)
+    print(f"Number of traces for key {rand_key}: {len(X_rand_key)}")
+    train_attack_GE, train_attack_NTGE, train_attack_key_log_prob = evaluate_optimized(
+        device, 
         model, 
-        datasets['val'].X, 
-        datasets['val'].Y, 
-        datasets['val'].K, 
-        device=device
-    )
-    key_wise_log_likelihood_plot(
-        "Validation Key-wise Log-Likelihood Distribution", 
-        val_key_log_prob, 
-        writer
-    )
-    print("Results saved to tensorboard.")
+        X_rand_key, 
+        P_rand_key, 
+        rand_key, 
+        leakage_model=config['leakage'], 
+        nb_attacks=config['num_attacks'], 
+        total_nb_traces_attacks=len(X_rand_key), 
+        attack_trace_usage=len(X_rand_key),)
+    
+    # write GE (1D numpy array) to tensorboard writer
+    for i, val in enumerate(train_attack_GE):
+        writer.add_scalar(f'Val Attack GE', val, i)
 
-    # for test, calculate key-wise log-likelihood distribution and write to tensorboard
-    print("Test: Calculating Key-wise Log-Likelihood Distribution ...")
-    test_key_log_prob = key_wise_log_likelihood(
-        model,
-        datasets['test'].X,
-        datasets['test'].Y,
-        datasets['test'].K,
-        device=device
+    key_wise_log_likelihood_plot(
+        "Val Attack Key Log-Likelihood Distribution",
+        train_attack_key_log_prob,
+        writer,
+        highlight_indices=[rand_key],
+        global_step=config["train_size"]-1
     )
-    correct_key_log_likelihood = test_key_log_prob[correct_key]
-    print(f"Correct key log likelihood: {correct_key_log_likelihood}")
-    writer.add_scalar(f'Test Key Log-Likelihood', correct_key_log_likelihood, 0)
+
+    ######
+
+    if config["leakage"] == "ID":
+        # for validation, calculate key-wise log-likelihood distribution and write to tensorboard
+        print("Val: Calculating Key-wise Log-Likelihood Distribution ...")
+        val_key_log_prob = key_wise_log_likelihood(
+            model, 
+            datasets['val'].X, 
+            datasets['val'].Y, 
+            datasets['val'].K, 
+            device=device
+        )
+        key_wise_log_likelihood_plot(
+            "Validation Key-wise Log-Likelihood Distribution", 
+            val_key_log_prob, 
+            writer
+        )
+        print("Results saved to tensorboard.")
+
+        # for test, calculate key-wise log-likelihood distribution and write to tensorboard
+        print("Test: Calculating Key-wise Log-Likelihood Distribution ...")
+        test_key_log_prob = key_wise_log_likelihood(
+            model,
+            datasets['test'].X,
+            datasets['test'].Y,
+            datasets['test'].K,
+            device=device
+        )
+        correct_key_log_likelihood = test_key_log_prob[correct_key]
+        print(f"Correct key log likelihood: {correct_key_log_likelihood}")
+        writer.add_scalar(f'Test Key Log-Likelihood', correct_key_log_likelihood, 0)
 
     print("Done.")
 
