@@ -1,8 +1,8 @@
 {
     "output_dir": "./Results",
-    "codename": "X",
-    "expr_num": 33,
-    "comment": "",
+    "codename": "TEST",
+    "expr_num": 1,
+    "comment": "Check whether key will influence the prediction result",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
     "train_size": 480000,

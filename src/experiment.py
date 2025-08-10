@@ -29,7 +29,7 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
     model_type = config["model"]
     num_epochs = config["num_epochs"]
-    dataset_sizes = {'train': config['train_size'], 'val': config['val_size']}
+    dataset_sizes = {'train': len(datasets['train'].X), 'val': len(datasets['val'].X), 'val2': len(datasets['val2'].X)}
 
     # create the tensorboard writer
     writer = SummaryWriter(log_dir=config.output_folder)
@@ -87,7 +87,7 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         desc = ""
 
         # Each epoch has a training and validation phase
-        for phase in ['train', 'val']:  # ,
+        for phase in ['train', 'val', 'val2']:  # ,
             if phase == 'train':
                 model.train()  # Set model to training mode
             else:
@@ -321,7 +321,7 @@ def experiment(expr_config: Config, seed: int|None = 0) -> float:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
     # load data
-    (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_test, Y_test, P_test, K_test)= load_data(expr_config, device)
+    (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_val2, Y_val2, P_val2, K_val2), (X_test, Y_test, P_test, K_test)= load_data(expr_config, device)
 
     # save the configuration
     expr_config.save_config()
@@ -329,6 +329,7 @@ def experiment(expr_config: Config, seed: int|None = 0) -> float:
     datasets = {
         "train": SCA_Dataset(expr_config, X_train, Y_train, P_train, K_train),
         "val": SCA_Dataset(expr_config, X_val, Y_val, P_val, K_val),
+        "val2": SCA_Dataset(expr_config, X_val2, Y_val2, P_val2, K_val2),
         "test": SCA_Dataset(expr_config, X_test, Y_test, P_test, K_test),
     }
 

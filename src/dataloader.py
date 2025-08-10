@@ -1,6 +1,7 @@
 from typing import Callable, Literal, Iterable, Optional, Tuple, Union
 import numpy as np
 from torch.utils.data import Dataset
+from tqdm import tqdm
 from src.utils import calculate_HW_single, load_ctf_2025
 import torch
 from .config import Config
@@ -295,24 +296,69 @@ def load_data(config: Config, device: str = 'cuda'):
         X_profiling, X_attack = standardize(X_profiling, X_attack, device=device)
 
     # split train into train and validation
-    X_train = np.expand_dims(X_profiling[:train_size], -1)
-    Y_train = Y_profiling[:train_size]
-    P_train = P_profiling[:train_size]
-    K_train = K_profiling[:train_size]
     
-    X_val = np.expand_dims(X_profiling[train_size:train_size + val_size], -1)
-    Y_val = Y_profiling[train_size:train_size + val_size]
-    P_val = P_profiling[train_size:train_size + val_size]
-    K_val = K_profiling[train_size:train_size + val_size]
 
     X_test = np.expand_dims(X_attack, -1)
     Y_test = Y_attack
     P_test = P_attack
     K_test = K_attack
 
+    # recollect the data to verify whether the key incluence the prediction
+    # get all indices where K_profiling <= 127
+    X_train = []
+    Y_train = []
+    P_train = []
+    K_train = []
+
+    X_val = []
+    Y_val = []
+    P_val = []
+    K_val = []
+
+    X_val2 = []
+    Y_val2 = []
+    P_val2 = []
+    K_val2 = []
+
+    for i in tqdm(range(len(X_profiling))):
+        if K_profiling[i] <= 127:
+            if i < len(X_profiling) * 2 // 3:
+                X_train.append(X_profiling[i])
+                Y_train.append(Y_profiling[i])
+                P_train.append(P_profiling[i])
+                K_train.append(K_profiling[i])
+            else:
+                X_val2.append(X_profiling[i])
+                Y_val2.append(Y_profiling[i])
+                P_val2.append(P_profiling[i])
+                K_val2.append(K_profiling[i])
+        else:
+            X_val.append(X_profiling[i])
+            Y_val.append(Y_profiling[i])
+            P_val.append(P_profiling[i])
+            K_val.append(K_profiling[i])
+
+    X_train = np.expand_dims(np.array(X_train), -1)
+    Y_train = np.array(Y_train)
+    P_train = np.array(P_train)
+    K_train = np.array(K_train)
+
+    # validation set is the one with key > 127
+    X_val = np.expand_dims(np.array(X_val), -1)
+    Y_val = np.array(Y_val)
+    P_val = np.array(P_val)
+    K_val = np.array(K_val)
+
+    # validation set 2 is the one with key <= 127
+    X_val2 = np.expand_dims(np.array(X_val2), -1)
+    Y_val2 = np.array(Y_val2)
+    P_val2 = np.array(P_val2)
+    K_val2 = np.array(K_val2)
+
+
     torch.cuda.empty_cache()  # clear GPU memory
 
-    return (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_test, Y_test, P_test, K_test)
+    return (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_val2, Y_val2, P_val2, K_val2), (X_test, Y_test, P_test, K_test)
 
 def data_augmentation(config: Config, X: np.ndarray, device: str) -> np.ndarray:
     """
