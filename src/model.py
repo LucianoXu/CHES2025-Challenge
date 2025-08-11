@@ -141,23 +141,27 @@ class MLP(nn.Module):
         self.layers = nn.ModuleList()
 
         for layer_index in range(0, len(self.hidden_dims)):
+            layer = nn.Sequential()
+
             if layer_index == 0:
-                self.layers.append(nn.Linear(self.input_dim, self.hidden_dims[layer_index]))
+                layer.append(nn.Linear(self.input_dim, self.hidden_dims[layer_index]))
             else:
-                self.layers.append(nn.Linear(self.hidden_dims[layer_index - 1], self.hidden_dims[layer_index]))
+                layer.append(nn.Linear(self.hidden_dims[layer_index - 1], self.hidden_dims[layer_index]))
 
             if self.activation == 'relu':
-                self.layers.append(nn.ReLU())
+                layer.append(nn.ReLU())
             elif self.activation == 'selu':
-                self.layers.append(nn.SELU())
+                layer.append(nn.SELU())
             elif self.activation == 'tanh':
-                self.layers.append(nn.Tanh())
+                layer.append(nn.Tanh())
             elif self.activation == 'elu':
-                self.layers.append(nn.ELU())
+                layer.append(nn.ELU())
 
             # add the dropout layer
             if self.model_args["dropout_rate"] is not None and layer_index >= len(self.hidden_dims) - 2:
-                self.layers.append(nn.Dropout(self.model_args["dropout_rate"]))
+                layer.append(nn.Dropout(self.model_args["dropout_rate"]))
+
+            self.layers.append(layer)
 
         if len(self.hidden_dims) == 0:
             self.last_layer = nn.Linear(self.input_dim, self.output_dim)
@@ -181,8 +185,15 @@ class MLP(nn.Module):
             diff = fractional_diff(x, d=self.model_args["fractional_diff"], lags=16)
             x = torch.cat((x, diff), dim=-1)  # (N, T) -> (N, 2*T)
 
-        for layer in self.layers:
+        x_prev = None
+        for i, layer in enumerate(self.layers):
             x = layer(x)
+            if self.model_args["residual_connection"] is not None and i % self.model_args["residual_connection"] == 0:
+                if x_prev is None:
+                    x_prev = x
+                else:
+                    x = x + x_prev  # residual connection
+                    x_prev = x
 
         x = self.last_layer(x)
         return x
