@@ -3,6 +3,99 @@ import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch
+import torch.nn.functional as F
+
+# -------- Weights --------
+def fracdiff_weights(d: float, lags: int, *, device=None, dtype=None) -> torch.Tensor:
+    """
+    Vectorized weights for (1 - L)^d up to given lags.
+    w_k = (-1)^k * C(d, k),  C(d,k) = Gamma(d+1) / (Gamma(k+1) * Gamma(d-k+1))
+
+    Args:
+        d: fractional order (real, typical 0<d<1)
+        lags: include lags 0..lags  (kernel length = lags+1)
+
+    Returns:
+        1D tensor of shape (lags+1,)
+    """
+    if lags < 0:
+        raise ValueError("lags must be >= 0")
+
+    # compute in float64 for stability, then cast back
+    work_dtype = torch.float64
+    k = torch.arange(lags + 1, device=device, dtype=work_dtype)
+    d_t = torch.as_tensor(d, device=device, dtype=work_dtype)
+
+    # log-binomial via log-gamma for stability
+    lg = torch.lgamma
+    log_w_abs = lg(d_t + 1) - lg(k + 1) - lg(d_t - k + 1)
+    sign = torch.where((k % 2) == 0, 1.0, -1.0)  # (-1)^k
+    w = sign * torch.exp(log_w_abs)
+
+    # cast to requested dtype (default float32)
+    return w.to(dtype if dtype is not None else torch.float32)
+
+
+# -------- Fractional differencing --------
+def fractional_diff(x: torch.Tensor,
+                    d: float,
+                    *,
+                    lags: int = 128,
+                    center: bool = False) -> torch.Tensor:
+    """
+    Apply fractional differencing along the last dimension using causal convolution.
+
+    Args:
+        x: input (..., T)
+        d: fractional order
+        lags: number of lags to include (kernel length = lags+1)
+        center: remove mean along time after differencing
+
+    Returns:
+        y with the same shape as x
+    """
+    if x.ndim < 1:
+        raise ValueError("x must have at least 1 dimension")
+    *batch, T = x.shape
+    device, dtype = x.device, x.dtype
+
+    # build kernel (causal: past-to-present); conv1d is xcorr so we flip
+    w = fracdiff_weights(d, lags, device=device, dtype=dtype)       # (L,)
+    kernel = w.flip(0).view(1, 1, -1)                               # (1,1,L)
+
+    # explicit causal padding on the left so output length is T
+    x_flat = x.reshape(-1, 1, T)                                    # (N,1,T)
+    x_pad  = F.pad(x_flat, (kernel.size(-1) - 1, 0))                # left pad
+    y = F.conv1d(x_pad, kernel)                                     # (N,1,T)
+    y = y.reshape(*batch, T)
+
+    if center:
+        y = y - y.mean(dim=-1, keepdim=True)
+    return y
+
+
+# -------- Optional: pick lags automatically by tail cutoff --------
+def suggest_lags(d: float, tol: float = 1e-4, max_lags: int = 10000) -> int:
+    """
+    Choose smallest lags so that |w_k| < tol for all k > lags (crude but practical).
+    Uses stable recurrence; stops early.
+
+    Note: For small tol and d~0.5, this can still be large. Prefer fixed lags (e.g., 256).
+    """
+    if tol <= 0:
+        raise ValueError("tol must be positive")
+    w_prev = 1.0
+    lags = 0
+    k = 1
+    while k <= max_lags:
+        w_k = -w_prev * (d - k + 1.0) / k
+        if abs(w_k) < tol:
+            break
+        w_prev = w_k
+        lags = k
+        k += 1
+    return lags
 
 class TimestepWindow(nn.Module):
     '''
@@ -33,6 +126,9 @@ class MLP(nn.Module):
         self.hidden_dims = model_args["hidden_dims"]
         self.output_dim = model_args["output_dim"]
         self.activation = model_args["activation"]
+
+        if self.model_args["fractional_diff"] is not None:
+            self.input_dim += model_args["input_dim"]
 
         # the input window
         if self.model_args["input_window"]:
@@ -74,11 +170,16 @@ class MLP(nn.Module):
         if self.model_args["gated"]:
             x = x * self.gate.unsqueeze(-1)
 
-        x = x.transpose(1, 2)  # (N, T, 1) -> (N, 1, T)
+        x = x.flatten(start_dim=1)  # (N, T, 1) -> (N, T)
+
+        # calculate the fractional difference
+        if self.model_args["fractional_diff"] is not None:
+            diff = fractional_diff(x, d=self.model_args["fractional_diff"], lags=16)
+            x = torch.cat((x, diff), dim=-1)  # (N, T) -> (N, 2*T)
+
         for layer in self.layers:
             x = layer(x)
-        x = self.last_layer(x) #F.softmax()
-        x = x.squeeze(1)
+        x = self.last_layer(x)
         return x
 
 
@@ -191,25 +292,28 @@ class CNN(nn.Module):
                 self.layers.append(nn.ELU())
 
             #Pooling Layer
-            if self.pooling_type == "max_pool":
-                self.layers.append(nn.MaxPool1d(
-                    kernel_size=self.model_args['pooling_sizes'][layer_index], 
-                    stride=self.model_args['pooling_sizes'][layer_index])
-                )
-            elif self.pooling_type == "average_pool":
-                self.layers.append(nn.AvgPool1d(
-                    kernel_size=self.model_args['pooling_sizes'][layer_index], 
-                    stride=self.model_args['pooling_sizes'][layer_index])
-                )
+            if self.model_args["pooling_sizes"][layer_index] != 1:
+                if self.pooling_type == "max_pool":
+                    self.layers.append(nn.MaxPool1d(
+                        kernel_size=self.model_args['pooling_sizes'][layer_index], 
+                        stride=self.model_args['pooling_sizes'][layer_index])
+                    )
+                elif self.pooling_type == "average_pool":
+                    self.layers.append(nn.AvgPool1d(
+                        kernel_size=self.model_args['pooling_sizes'][layer_index], 
+                        stride=self.model_args['pooling_sizes'][layer_index])
+                    )
 
             #BatchNorm
-            self.layers.append(nn.BatchNorm1d(self.model_args["layer_dims"][layer_index + 1]))
+            # self.layers.append(nn.BatchNorm1d(self.model_args["layer_dims"][layer_index + 1]))
 
         # global average pooling
         if self.model_args["global_pooling_type"] == "average_pool":
             self.layers.append(nn.AdaptiveAvgPool1d(1))  # (N, C, T) -> (N, C, 1)
         elif self.model_args["global_pooling_type"] == "max_pool":
             self.layers.append(nn.AdaptiveMaxPool1d(1))
+        elif self.model_args["global_pooling_type"] == "none":
+            pass
         else:
             raise ValueError("Invalid global pooling type: {}".format(self.model_args["global_pooling_type"]))
             
@@ -232,7 +336,8 @@ class CNN(nn.Module):
             if self.free_cache:
                 torch.cuda.empty_cache()
 
-        # x : (N, C, 1)
+        # x : (N, C, T)
+        x = x.flatten(start_dim=1).unsqueeze(-1)  # (N, C, T) -> (N, D, 1)
 
         if self.model_args["mlp_head"]:
             x = self.mlp(x)
@@ -255,36 +360,3 @@ def cal_size_after_avgpool1d(n_sample_points, kernel_size, stride, padding=0):
     L_in = n_sample_points
     L_out = math.floor(((L_in + (2 * padding) - kernel_size ) / stride) + 1)
     return L_out
-
-
-
-#############################
-
-def create_hyperparameter_space(model_type):
-    if model_type == "mlp":
-        search_space = {"batch_size": random.randrange(100, 1001, 100),
-                                                   "lr": random.choice( [1e-3, 5e-4, 1e-4, 5e-5, 1e-5]),  # 1e-3, 5e-3, 1e-4, 5e-4
-                                                    "optimizer": random.choice( ["RMSprop", "Adam"]),
-                                                    "layers": random.randrange(1, 8, 1),
-                                                    "neurons": random.choice( [10, 20, 50, 100, 200, 300, 400, 500]),
-                                                    "activation": random.choice(  ["relu", "selu", "elu", "tanh"]),
-                                                    "kernel_initializer": random.choice(["random_uniform", "glorot_uniform", "he_uniform"]),
-                                                }
-        return search_space
-    elif model_type == "cnn":
-        search_space = {"batch_size": random.randrange(1000, 1001, 100),
-                                              "lr":random.choice( [1e-3, 5e-4, 1e-4, 5e-5, 1e-5]),  # 1e-3, 5e-3, 1e-4, 5e-4
-                                              "optimizer":random.choice(["RMSprop", "Adam"]),
-                                              "layers": random.randrange(1, 8, 1),
-                                              "neurons": random.choice( [10, 20, 50, 100, 200, 300, 400, 500]),
-                                              "activation": random.choice( ["relu", "selu", "elu", "tanh"]),
-                                              "kernel_initializer": random.choice( ["random_uniform", "glorot_uniform", "he_uniform"]),
-                                              "pooling_types": random.choice(["max_pool", "average_pool"]),
-                                              "pooling_sizes":random.choice(  [2,4,6,8,10]), #size == strides
-                                              "conv_layers": random.choice( [1,2,3,4]),
-                                              "filters": random.choice( [4,8,12,16]),
-                                              "kernels": random.choice( [i for i in range(26,53,2)]), #strides = kernel/2
-                                              "padding": random.choice(  [0,4,8,12,16]),
-                                        }
-
-        return search_space
