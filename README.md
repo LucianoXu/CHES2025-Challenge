@@ -85,7 +85,12 @@ This fact causes the consequence that we cannot standardize the test data using 
 
 - Now with the better evaluation of train-validation data from profiling, we discovered that the input gating helps improve the result, and the gating parameter indicates which part of the time steps matters. It turned out that the first 1000 stpes with spikes are most important, which is consistent with the theory that S-BOX creates most of the leakage because of high energy consumption.
 
+- We mixed attack traces into profiling traces, and the performance improved largely.
+
 ## Log
+- 8/11 Add L2-normalization and dropout.
+- 8/10 Add fractional differentiation.
+- 8/10 Mix attack traces with profiling traces.
 - 8/9 Add CNN model.
 - 8/9 Add denoising by notch frequency in the spectrogram.
 - 8/8 Fix data drift using special standardization.

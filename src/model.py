@@ -155,6 +155,10 @@ class MLP(nn.Module):
             elif self.activation == 'elu':
                 self.layers.append(nn.ELU())
 
+            # add the dropout layer
+            if self.model_args["dropout_rate"] is not None and layer_index >= len(self.hidden_dims) - 2:
+                self.layers.append(nn.Dropout(self.model_args["dropout_rate"]))
+
         if len(self.hidden_dims) == 0:
             self.last_layer = nn.Linear(self.input_dim, self.output_dim)
         else:
@@ -179,6 +183,7 @@ class MLP(nn.Module):
 
         for layer in self.layers:
             x = layer(x)
+
         x = self.last_layer(x)
         return x
 

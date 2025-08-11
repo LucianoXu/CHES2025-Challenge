@@ -63,6 +63,10 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
     elif config["optimizer"] == "RMSprop":
         optimizer = torch.optim.RMSprop(model.parameters(), lr=lr)
+
+    elif config["optimizer"] == "AdamW":
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=config["optimizer_args"]["weight_decay"])
+
     else:
         raise ValueError(f"Unknown optimizer: {config['optimizer']}")
 

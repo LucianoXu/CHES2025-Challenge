@@ -1,7 +1,7 @@
 {
     "output_dir": "./Results",
-    "codename": "A",
-    "expr_num": 3,
+    "codename": "V",
+    "expr_num": 49,
     "comment": "Mixing profiling and attack data.",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
@@ -44,12 +44,15 @@
             300,
             300
         ],
+        "dropout_rate": null,
         "output_dim": 256,
         "activation": "relu"
     },
 
-    "optimizer": "Adam",
-    "optimizer_args": {},
+    "optimizer": "AdamW",
+    "optimizer_args": {
+        "weight_decay": 0.001
+    },
 
     "lr": 0.0001,
     "batch_size": 3000,
