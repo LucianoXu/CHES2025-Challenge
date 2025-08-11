@@ -340,7 +340,8 @@ def load_data(config: Config, device: str = 'cuda'):
     P_test = P_attack_in_test
     K_test = K_attack_in_test   
     
-    torch.cuda.empty_cache()  # clear GPU memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()  # clear GPU memory
 
     return (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_test, Y_test, P_test, K_test)
 

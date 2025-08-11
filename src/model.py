@@ -333,7 +333,7 @@ class CNN(nn.Module):
 
         for layer in self.layers:
             x = layer(x)
-            if self.free_cache:
+            if self.free_cache and torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
         # x : (N, C, T)

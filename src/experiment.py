@@ -82,7 +82,8 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
     for epoch in range(num_epochs):
 
-        torch.cuda.empty_cache()  # clear GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()  # clear GPU memory
 
         desc = ""
 
