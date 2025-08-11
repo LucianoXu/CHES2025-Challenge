@@ -292,6 +292,10 @@ def load_data(config: Config, device: str = 'cuda'):
             std_m=std_m,
             device=device
         )
+        # save the matrices to a file
+        with open("std_m.pkl", 'wb') as f:
+            pickle.dump(std_m, f)
+            
     else:    
         # standardize the data according to profiling set
         X_profiling, X_attack = standardize(X_profiling, X_attack, device=device)
