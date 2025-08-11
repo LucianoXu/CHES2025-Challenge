@@ -29,7 +29,7 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
     model_type = config["model"]
     num_epochs = config["num_epochs"]
-    dataset_sizes = {'train': config['train_size'], 'val': config['val_size']}
+    dataset_sizes = {'train': len(datasets['train'].X), 'val': len(datasets['val'].X)}
 
     # create the tensorboard writer
     writer = SummaryWriter(log_dir=config.output_folder)
@@ -194,8 +194,8 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         correct_key, 
         leakage_model=config['leakage'], 
         nb_attacks=config['num_attacks'], 
-        total_nb_traces_attacks=100_000, 
-        attack_trace_usage=100_000,)
+        total_nb_traces_attacks=len(dataset_test.X), 
+        attack_trace_usage=len(dataset_test.X),)
     # record the test key log likelihood distribution
     # the values will be large negative numbers because they are probabilities product of joint events (k0,k0, ..., k0) throughout the whole trace
     key_wise_log_likelihood_plot(
@@ -203,7 +203,7 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         test_key_log_prob,
         writer,
         highlight_indices=[correct_key],
-        global_step=config["test_size"]-1
+        global_step=0
     )
     
     # write GE (1D numpy array) to tensorboard writer
@@ -253,7 +253,7 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         train_attack_key_log_prob,
         writer,
         highlight_indices=[rand_key],
-        global_step=config["train_size"]-1
+        global_step=0
     )
 
     ######
@@ -289,6 +289,12 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         writer.add_scalar(f'Test Key Log-Likelihood', correct_key_log_likelihood, 0)
 
     print("Done.")
+
+    # record the gate
+    if config["model_args"].get("gated", False):
+        p = model.gate.data.cpu().numpy()
+        for i in range(len(p)):
+            writer.add_scalar(f'Gate Strength', p[i], i)
 
     return model, score
 

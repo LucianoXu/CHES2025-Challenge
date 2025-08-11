@@ -258,9 +258,11 @@ def load_data(config: Config, device: str = 'cuda'):
         other arrays: shape (N, )
     '''
 
-    train_size = config["train_size"]
-    val_size = config["val_size"]
-    test_size = config["test_size"]
+    profiling_in_train = config["profiling_in_train"]
+    attack_in_train = config["attack_in_train"]
+    profiling_in_val = config["profiling_in_val"]
+    attack_in_val = config["attack_in_val"]
+    attack_in_test = config["attack_in_test"]
 
     (X_profiling, X_attack), \
     (Y_profiling, Y_attack), \
@@ -268,8 +270,8 @@ def load_data(config: Config, device: str = 'cuda'):
     (K_profiling, K_attack) = load_ctf_2025(
         config["dataset"],
         byte=0, 
-        train_begin=0, train_end=train_size + val_size, 
-        test_begin=0, test_end=test_size)
+        train_begin=0, train_end=profiling_in_train + profiling_in_val, 
+        test_begin=0, test_end=attack_in_train + attack_in_val + attack_in_test,)
     
     # denoising (the arguments are hardcoded)
     if config["denoising"]:
@@ -295,21 +297,49 @@ def load_data(config: Config, device: str = 'cuda'):
         X_profiling, X_attack = standardize(X_profiling, X_attack, device=device)
 
     # split train into train and validation
-    X_train = np.expand_dims(X_profiling[:train_size], -1)
-    Y_train = Y_profiling[:train_size]
-    P_train = P_profiling[:train_size]
-    K_train = K_profiling[:train_size]
+    X_profiling_in_train = X_profiling[:profiling_in_train]
+    Y_profiling_in_train = Y_profiling[:profiling_in_train]
+    P_profiling_in_train = P_profiling[:profiling_in_train]
+    K_profiling_in_train = K_profiling[:profiling_in_train]
+
+    X_profiling_in_val = X_profiling[profiling_in_train:profiling_in_train + profiling_in_val]
+    Y_profiling_in_val = Y_profiling[profiling_in_train:profiling_in_train + profiling_in_val]
+    P_profiling_in_val = P_profiling[profiling_in_train:profiling_in_train + profiling_in_val]
+    K_profiling_in_val = K_profiling[profiling_in_train:profiling_in_train + profiling_in_val]
+
+    X_attack_in_train = X_attack[:attack_in_train]
+    Y_attack_in_train = Y_attack[:attack_in_train]
+    P_attack_in_train = P_attack[:attack_in_train]
+    K_attack_in_train = K_attack[:attack_in_train]
+
+    X_attack_in_val = X_attack[attack_in_train:attack_in_train + attack_in_val]
+    Y_attack_in_val = Y_attack[attack_in_train:attack_in_train + attack_in_val]
+    P_attack_in_val = P_attack[attack_in_train:attack_in_train + attack_in_val]
+    K_attack_in_val = K_attack[attack_in_train:attack_in_train + attack_in_val]
+
+    X_attack_in_test = X_attack[attack_in_train + attack_in_val:attack_in_train + attack_in_val + attack_in_test]
+    Y_attack_in_test = Y_attack[attack_in_train + attack_in_val:attack_in_train + attack_in_val + attack_in_test]
+    P_attack_in_test = P_attack[attack_in_train + attack_in_val:attack_in_train + attack_in_val + attack_in_test]
+    K_attack_in_test = K_attack[attack_in_train + attack_in_val:attack_in_train + attack_in_val + attack_in_test]
+
+    # concatenate to create training, validation, and test sets
+    X_train = np.concatenate((X_profiling_in_train, X_attack_in_train), axis=0)
+    X_train = np.expand_dims(X_train, -1)  # add channel dimension
+    Y_train = np.concatenate((Y_profiling_in_train, Y_attack_in_train), axis=0)
+    P_train = np.concatenate((P_profiling_in_train, P_attack_in_train), axis=0)
+    K_train = np.concatenate((K_profiling_in_train, K_attack_in_train), axis=0)
+
+    X_val = np.concatenate((X_profiling_in_val, X_attack_in_val), axis=0)
+    X_val = np.expand_dims(X_val, -1)  # add channel dimension
+    Y_val = np.concatenate((Y_profiling_in_val, Y_attack_in_val), axis=0)
+    P_val = np.concatenate((P_profiling_in_val, P_attack_in_val), axis=0)
+    K_val = np.concatenate((K_profiling_in_val, K_attack_in_val), axis=0)
+
+    X_test = np.expand_dims(X_attack_in_test, -1)  # add channel dimension
+    Y_test = Y_attack_in_test
+    P_test = P_attack_in_test
+    K_test = K_attack_in_test   
     
-    X_val = np.expand_dims(X_profiling[train_size:train_size + val_size], -1)
-    Y_val = Y_profiling[train_size:train_size + val_size]
-    P_val = P_profiling[train_size:train_size + val_size]
-    K_val = K_profiling[train_size:train_size + val_size]
-
-    X_test = np.expand_dims(X_attack, -1)
-    Y_test = Y_attack
-    P_test = P_attack
-    K_test = K_attack
-
     torch.cuda.empty_cache()  # clear GPU memory
 
     return (X_train, Y_train, P_train, K_train), (X_val, Y_val, P_val, K_val), (X_test, Y_test, P_test, K_test)

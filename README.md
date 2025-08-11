@@ -81,6 +81,10 @@ This fact causes the consequence that we cannot standardize the test data using 
 
 - We observed that test key log-likelihood is increased when using CNN.
 
+- Experiments show that the prediction of leakage labels does not depend on the key. This means that we can train the model to predice the label with certain keys, and then use it to infer the leakage label with other keys.
+
+- Now with the better evaluation of train-validation data from profiling, we discovered that the input gating helps improve the result, and the gating parameter indicates which part of the time steps matters. It turned out that the first 1000 stpes with spikes are most important, which is consistent with the theory that S-BOX creates most of the leakage because of high energy consumption.
+
 ## Log
 - 8/9 Add CNN model.
 - 8/9 Add denoising by notch frequency in the spectrogram.
