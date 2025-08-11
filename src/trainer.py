@@ -1,7 +1,7 @@
 import torch
 import time
 from torch import nn
-from src.net import MLP, CNN, weight_init
+from src.net import MLP, CNN
 
 def trainer(config,num_epochs,num_sample_pts, dataloaders,dataset_sizes,model_type, classes, device):
 

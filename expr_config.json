@@ -1,0 +1,60 @@
+{
+    "output_dir": "./Results",
+    "codename": "A",
+    "expr_num": 3,
+    "comment": "Mixing profiling and attack data.",
+
+    "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
+
+    "profiling_in_train": 400000,
+    "attack_in_train": 90000,
+    "profiling_in_val": 50000,
+    "attack_in_val": 0,
+    "attack_in_test": 10000,
+
+    "leakage": "ID",
+
+    "denoising": true,
+    "denoising_args": {
+        "fs": 1000,
+        "notch_freqs": [20, 25, 30, 40, 60, 80],
+        "Q": 100,
+        "atten_db": 20
+    },
+
+    "fixing_data_drift": true,
+
+    "data_augmentation": true,
+    "aug_gaussian_noise": 0.03,
+    "aug_random_shift": 3,
+
+    "model": "mlp",
+    "model_args": {
+        "input_window": true,
+        "input_window_args": {
+            "start_indices": 0,
+            "window_size": 3000
+        },
+        "gated": false,
+        "fractional_diff": 0.5,
+        "input_dim": 3000,
+        "hidden_dims": [
+            300,
+            300,
+            300,
+            300
+        ],
+        "output_dim": 256,
+        "activation": "relu"
+    },
+
+    "optimizer": "Adam",
+    "optimizer_args": {},
+
+    "lr": 0.0001,
+    "batch_size": 3000,
+    "accumulation_steps": 1,
+    "num_epochs": 9,
+
+    "num_attacks": 100
+}

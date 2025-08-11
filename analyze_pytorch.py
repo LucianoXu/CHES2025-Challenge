@@ -1,4 +1,6 @@
+import json
 import os
+import pickle
 import random
 from copy import deepcopy
 import numpy as np
@@ -6,13 +8,13 @@ import torch
 
 from torchvision.transforms import transforms
 from src.dataloader import ToTensor_trace, Custom_Dataset
-from src.net import create_hyperparameter_space, MLP, CNN
+from src.net import MLP, CNN
 from src.trainer import trainer
 from src.utils import evaluate, AES_Sbox, calculate_HW
 
 if __name__=="__main__":
     dataset = "CHES_2025"
-    leakage = "HW"
+    leakage = "ID"
     nb_traces_attacks = 100000
     total_nb_traces_attacks = 100000
 
@@ -61,7 +63,19 @@ if __name__=="__main__":
 
     ## Load your model (note, you have to create your model in this file and new function should be in this file.) ########################
     ############## Below is an example ############################################
-    model = torch.load('./model.pth', weights_only=False)
+    with open("./expr_config.json", "r") as f:
+        model_args = json.load(f)
+        
+    model = MLP(model_args=model_args['model_args'])
+    model.load_state_dict(torch.load('./model.pth', weights_only=True))
+    model.to(device)
+
+    # load the standardization parameters
+    with open("./std_m.pkl", "rb") as f:
+        model.std_m = pickle.load(f)
+    for key in model.std_m:
+        model.std_m[key] = torch.tensor(model.std_m[key], device=device)
+
     model.eval()
     ###############################################################################
 
