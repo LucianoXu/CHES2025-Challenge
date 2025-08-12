@@ -1,8 +1,8 @@
 {
     "output_dir": "./Results",
-    "codename": "V",
-    "expr_num": 56,
-    "comment": "Mixing profiling and attack data.",
+    "codename": "A",
+    "expr_num": 4,
+    "comment": "",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
 
