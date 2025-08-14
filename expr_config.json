@@ -1,7 +1,7 @@
 {
     "output_dir": "./Results",
     "codename": "A",
-    "expr_num": 3,
+    "expr_num": 5,
     "comment": "Mixing profiling and attack data.",
 
     "dataset": "./Dataset/CHES_2025/CHES_Challenge.h5",
@@ -22,7 +22,7 @@
         "atten_db": 20
     },
 
-    "fixing_data_drift": true,
+    "fixing_data_drift": false,
 
     "data_augmentation": true,
     "aug_gaussian_noise": 0.03,
@@ -44,12 +44,16 @@
             300,
             300
         ],
+        "residual_connection": null,
+        "dropout_rate": null,
         "output_dim": 256,
         "activation": "relu"
     },
 
-    "optimizer": "Adam",
-    "optimizer_args": {},
+    "optimizer": "AdamW",
+    "optimizer_args": {
+        "weight_decay": 0.001
+    },
 
     "lr": 0.0001,
     "batch_size": 3000,
