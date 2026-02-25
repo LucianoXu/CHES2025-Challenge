@@ -1,7 +1,3 @@
-# This is a sample Python script.
-
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 import os
 import random
 import numpy as np
@@ -18,16 +14,27 @@ from .config import Config
 
 from .model import MLP, CNN
 
-def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[nn.Module, float]:
+def build_model(config: Config, device) -> nn.Module:
+    '''Build the model from the configuration.'''
+    model_type = config["model"]
+    model_args = config["model_args"]
+    if model_type == "mlp":
+        model = MLP(model_args).to(device)
+    elif model_type == "cnn":
+        model = CNN(model_args).to(device)
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+    return model
+
+
+def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> nn.Module:
     '''
-    The training will make use of all training data in the dataloader.
+    Train the model and return it with the best validation weights loaded.
 
     Returns:
         model: the trained model
-        score: the score for this competition (upper bounded by 200K)
     '''
 
-    model_type = config["model"]
     num_epochs = config["num_epochs"]
     dataset_sizes = {'train': len(datasets['train'].X), 'val': len(datasets['val'].X)}
 
@@ -35,16 +42,7 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     writer = SummaryWriter(log_dir=config.output_folder)
 
     # Build the model
-    model_args = config["model_args"]
-    if model_type == "mlp":
-        model = MLP(model_args).to(device)
-    elif model_type == "cnn":
-        model = CNN(model_args).to(device)
-        print("===Completed CNN model Hyperparameters===")
-        print(model.model_args)
-        print()
-    else:
-        raise ValueError(f"Unknown model type: {model_type}")
+    model = build_model(config, device)
 
     # record the model size
     model_size = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -79,10 +77,6 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     best_val_loss = float('inf')
     best_model_state = None
     early_stop: bool = False
-
-
-    # if hasattr(model, 'free_cache'):
-    #     model.free_cache = True # type: ignore[assignment]
 
     for epoch in range(num_epochs):
 
@@ -179,30 +173,44 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     assert best_model_state is not None
     model.load_state_dict(best_model_state)
 
-    ############################################
-    # Evaluation Phase
+    return model
+
+
+def analyze(config: Config, model: nn.Module, datasets: dict[str, SCA_Dataset], device, writer: SummaryWriter) -> float:
+    '''
+    Evaluate the trained model on the test set and compute the competition score.
+
+    Args:
+        config: Configuration object
+        model: Trained model
+        datasets: Dictionary with 'test' and 'val' SCA_Dataset entries
+        device: Torch device
+        writer: TensorBoard SummaryWriter
+
+    Returns:
+        score: the score for this competition (upper bounded by 200K)
+    '''
+
+    model.eval()
 
     if hasattr(model, 'free_cache'):
         model.free_cache = True # type: ignore[assignment]
 
     # evaluate GE and NTGE
-
     dataset_test = datasets['test']
     correct_key = dataset_test.K[0]
 
     print("Evaluation GE/NTGE score ...")
     GE, NTGE, test_key_log_prob = evaluate_optimized(
-        device, 
-        model, 
-        dataset_test.X, 
-        dataset_test.P, 
-        correct_key, 
-        leakage_model=config['leakage'], 
-        nb_attacks=config['num_attacks'], 
-        total_nb_traces_attacks=len(dataset_test.X), 
+        device,
+        model,
+        dataset_test.X,
+        dataset_test.P,
+        correct_key,
+        leakage_model=config['leakage'],
+        nb_attacks=config['num_attacks'],
+        total_nb_traces_attacks=len(dataset_test.X),
         attack_trace_usage=len(dataset_test.X),)
-    # record the test key log likelihood distribution
-    # the values will be large negative numbers because they are probabilities product of joint events (k0,k0, ..., k0) throughout the whole trace
     key_wise_log_likelihood_plot(
         "Test Joint Key Log-Likelihood Distribution",
         test_key_log_prob,
@@ -210,8 +218,7 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         highlight_indices=[correct_key],
         global_step=0
     )
-    
-    # write GE (1D numpy array) to tensorboard writer
+
     for i, val in enumerate(GE):
         writer.add_scalar(f'GE', val, i)
 
@@ -223,12 +230,10 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
 
     writer.add_scalar(f"Score", score, global_step=0)
     print("Score: ", score)
-    print("Results saved to tensorboard.")
 
-    # use trace from the training set to run another attack
+    # use traces from the validation set to run another attack
     rand_key = random.randint(0, 255)
-    print(f"Using random key {rand_key} for attack in validiation set ...")
-    # collect all traces of key rand_key from the training set
+    print(f"Using random key {rand_key} for attack in validation set ...")
     X_rand_key = []
     P_rand_key = []
     for i in range(len(datasets['val'].X)):
@@ -239,17 +244,16 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
     P_rand_key = np.array(P_rand_key)
     print(f"Number of traces for key {rand_key}: {len(X_rand_key)}")
     train_attack_GE, train_attack_NTGE, train_attack_key_log_prob = evaluate_optimized(
-        device, 
-        model, 
-        X_rand_key, 
-        P_rand_key, 
-        rand_key, 
-        leakage_model=config['leakage'], 
-        nb_attacks=config['num_attacks'], 
-        total_nb_traces_attacks=len(X_rand_key), 
+        device,
+        model,
+        X_rand_key,
+        P_rand_key,
+        rand_key,
+        leakage_model=config['leakage'],
+        nb_attacks=config['num_attacks'],
+        total_nb_traces_attacks=len(X_rand_key),
         attack_trace_usage=len(X_rand_key),)
-    
-    # write GE (1D numpy array) to tensorboard writer
+
     for i, val in enumerate(train_attack_GE):
         writer.add_scalar(f'Val Attack GE', val, i)
 
@@ -261,26 +265,21 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         global_step=0
     )
 
-    ######
-
     if config["leakage"] == "ID":
-        # for validation, calculate key-wise log-likelihood distribution and write to tensorboard
         print("Val: Calculating Key-wise Log-Likelihood Distribution ...")
         val_key_log_prob = key_wise_log_likelihood(
-            model, 
-            datasets['val'].X, 
-            datasets['val'].Y, 
-            datasets['val'].K, 
+            model,
+            datasets['val'].X,
+            datasets['val'].Y,
+            datasets['val'].K,
             device=device
         )
         key_wise_log_likelihood_plot(
-            "Validation Key-wise Log-Likelihood Distribution", 
-            val_key_log_prob, 
+            "Validation Key-wise Log-Likelihood Distribution",
+            val_key_log_prob,
             writer
         )
-        print("Results saved to tensorboard.")
 
-        # for test, calculate key-wise log-likelihood distribution and write to tensorboard
         print("Test: Calculating Key-wise Log-Likelihood Distribution ...")
         test_key_log_prob = key_wise_log_likelihood(
             model,
@@ -293,15 +292,14 @@ def trainer(config: Config, datasets: dict[str, SCA_Dataset], device) -> tuple[n
         print(f"Correct key log likelihood: {correct_key_log_likelihood}")
         writer.add_scalar(f'Test Key Log-Likelihood', correct_key_log_likelihood, 0)
 
-    print("Done.")
-
     # record the gate
     if config["model_args"].get("gated", False):
         p = model.gate.data.cpu().numpy()
         for i in range(len(p)):
             writer.add_scalar(f'Gate Strength', p[i], i)
 
-    return model, score
+    print("Done.")
+    return score
 
 def experiment(expr_config: Config, seed: int|None = 0) -> float:
     '''
@@ -343,12 +341,17 @@ def experiment(expr_config: Config, seed: int|None = 0) -> float:
         "test": SCA_Dataset(expr_config, X_test, Y_test, P_test, K_test),
     }
 
-    model, score = trainer(
-        config=expr_config, 
+    model = trainer(
+        config=expr_config,
         datasets=datasets,
         device=device
     )
 
     torch.save(model.state_dict(), expr_config.model_path)
+
+    # Evaluation phase
+    writer = SummaryWriter(log_dir=expr_config.output_folder)
+    score = analyze(expr_config, model, datasets, device, writer)
+    writer.close()
 
     return score
